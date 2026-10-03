@@ -21,8 +21,10 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
@@ -124,7 +126,7 @@ public class MainActivity extends Activity {
                         connection.setReadTimeout(12000);
                         connection.setUseCaches(false);
                         connection.setRequestProperty("Accept", "application/json");
-                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.6 Android");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.7 Android");
 
                         int code = connection.getResponseCode();
                         InputStream stream = code >= 200 && code < 300
@@ -145,6 +147,89 @@ public class MainActivity extends Activity {
                 }
                 emitTransportCallback("onAircraftError", lastError, "");
             }).start();
+        }
+
+        @JavascriptInterface
+        public void fetchNearbyTransit(double lat, double lon, int radiusMeters) {
+            final int radius = Math.max(300, Math.min(1800, radiusMeters));
+            new Thread(() -> {
+                String query = String.format(
+                        Locale.US,
+                        "[out:json][timeout:20];"
+                                + "(node(around:%d,%.6f,%.6f)[\"highway\"=\"bus_stop\"];"
+                                + "node(around:%d,%.6f,%.6f)[\"public_transport\"=\"platform\"];)->.stops;"
+                                + "rel(bn.stops)[\"type\"=\"route\"][\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"]->.routes;"
+                                + "(.stops;.routes;);out body;",
+                        radius, lat, lon, radius, lat, lon
+                );
+                try {
+                    String body = requestOverpass(query);
+                    emitTransportCallback("onNearbyTransit", body, "OpenStreetMap");
+                } catch (Exception e) {
+                    emitTransportCallback("onTransitError", "Остановки: " + e.getClass().getSimpleName(), "");
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void fetchTransitRoute(long relationId) {
+            if (relationId <= 0) return;
+            new Thread(() -> {
+                String query = "[out:json][timeout:25];relation(" + relationId + ");out geom;";
+                try {
+                    String body = requestOverpass(query);
+                    emitTransportCallback("onTransitRoute", body, String.valueOf(relationId));
+                } catch (Exception e) {
+                    emitTransportCallback("onTransitError", "Маршрут: " + e.getClass().getSimpleName(), "");
+                }
+            }).start();
+        }
+
+        private String requestOverpass(String query) throws Exception {
+            String[] endpoints = new String[]{
+                    "https://overpass-api.de/api/interpreter",
+                    "https://overpass.kumi.systems/api/interpreter"
+            };
+            Exception last = null;
+
+            for (String endpoint : endpoints) {
+                HttpURLConnection connection = null;
+                try {
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setRequestMethod("POST");
+                    connection.setConnectTimeout(9000);
+                    connection.setReadTimeout(18000);
+                    connection.setUseCaches(false);
+                    connection.setDoOutput(true);
+                    connection.setRequestProperty("Accept", "application/json");
+                    connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+                    connection.setRequestProperty("User-Agent", "RokinMaps/0.2.7 Android");
+
+                    String payload = "data=" + URLEncoder.encode(query, StandardCharsets.UTF_8.toString());
+                    try (OutputStreamWriter writer = new OutputStreamWriter(
+                            connection.getOutputStream(), StandardCharsets.UTF_8)) {
+                        writer.write(payload);
+                    }
+
+                    int code = connection.getResponseCode();
+                    InputStream stream = code >= 200 && code < 300
+                            ? connection.getInputStream()
+                            : connection.getErrorStream();
+                    String body = readAll(stream);
+
+                    if (code >= 200 && code < 300 && body != null && body.contains("{")) {
+                        return body;
+                    }
+                    last = new RuntimeException("HTTP " + code);
+                } catch (Exception e) {
+                    last = e;
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+            }
+
+            if (last != null) throw last;
+            throw new RuntimeException("No Overpass response");
         }
 
         private String readAll(InputStream stream) throws Exception {
