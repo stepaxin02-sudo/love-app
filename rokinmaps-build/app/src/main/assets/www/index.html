@@ -16,7 +16,7 @@
     <section class="panel route-card" id="routeCard">
       <div class="brand-row">
         <div class="brand-mark">R</div>
-        <div><div class="brand">Rokin Maps</div><div class="caption"><span class="live-dot"></span> LIVE · v0.2.12</div></div>
+        <div><div class="brand">Rokin Maps</div><div class="caption"><span class="live-dot"></span> LIVE · v0.2.13</div></div>
         <button class="icon-btn mobile-only" id="collapseBtn" aria-label="Свернуть">⌄</button>
       </div>
       <div class="route-form">
@@ -70,7 +70,10 @@
         <div class="search-box"><span>⌕</span><input id="searchInput" autocomplete="off" placeholder="Адрес или место" /><button id="searchSubmit">Найти</button></div>
       </div>
       <div class="search-context hidden" id="searchContext"></div>
-      <div class="search-state" id="searchState">Введите адрес и нажмите «Найти»</div>
+      <div class="search-state-row">
+        <div class="search-state" id="searchState">Начните вводить адрес</div>
+        <button class="history-clear hidden" id="historyClear">Очистить</button>
+      </div>
       <div class="results" id="results"></div>
     </section>
   </div>
@@ -88,6 +91,24 @@
       <div class="transport-note" id="transportNote">Включите нужные виды транспорта.</div>
     </section>
   </div>
+  <nav class="bottom-nav" id="bottomNav" aria-label="Основное меню">
+    <button class="bottom-nav-item active" id="bottomSearchBtn">
+      <span class="bottom-nav-icon">⌕</span>
+      <span>Поиск</span>
+    </button>
+    <button class="bottom-nav-item" id="bottomRouteBtn">
+      <span class="bottom-nav-icon">↗</span>
+      <span>Маршрут</span>
+    </button>
+    <button class="bottom-nav-item" id="bottomTransportBtn">
+      <span class="bottom-nav-icon">▣</span>
+      <span>Транспорт</span>
+    </button>
+    <button class="bottom-nav-item" id="bottomHistoryBtn">
+      <span class="bottom-nav-icon">◴</span>
+      <span>История</span>
+    </button>
+  </nav>
   <div class="navigation-ui hidden" id="navigationUi">
     <section class="navigation-top">
       <div class="nav-maneuver" id="navManeuverIcon">↑</div>
