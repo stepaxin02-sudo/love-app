@@ -48,3 +48,10 @@
 @media(max-width:720px){.nearby-stop-group{padding:8px}.nearby-stop-routes{max-height:98px;overflow:auto}}
 
 .nearby-transit-routes{display:block}
+
+
+.nearby-route.transport-bus .nearby-route-icon{color:#4da3ff;background:rgba(77,163,255,.14);border:1px solid rgba(77,163,255,.22)}
+.nearby-route.transport-minibus .nearby-route-icon{color:#ffb84d;background:rgba(255,184,77,.14);border:1px solid rgba(255,184,77,.22)}
+.nearby-route.transport-trolleybus .nearby-route-icon{color:#49d17d;background:rgba(73,209,125,.14);border:1px solid rgba(73,209,125,.22)}
+.nearby-route.transport-tram .nearby-route-icon{color:#ff6f91;background:rgba(255,111,145,.14);border:1px solid rgba(255,111,145,.22)}
+.nearby-route-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
