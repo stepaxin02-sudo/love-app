@@ -1,4 +1,4 @@
-(()=>{'use strict';const $=id=>document.getElementById(id);const state={origin:null,destination:null,mode:'car',route:null,selectTarget:'destination',markers:{origin:null,destination:null},searchAbort:null,cityContext:null,nearbyTransit:null,activeTransitRelation:null,transitStopMarkers:[],nearbyTransitToken:0,nearbyTransitExpected:0,nearbyTransitRadiusIndex:0,nearbyTransitRouteIndex:0,nearbyTransitTimer:null};let map;
+(()=>{'use strict';const $=id=>document.getElementById(id);const state={origin:null,destination:null,mode:'car',route:null,selectTarget:'destination',markers:{origin:null,destination:null},searchAbort:null,cityContext:null,nearbyTransit:null,activeTransitRelation:null,transitStopMarkers:[],nearbyStopMarkers:[],nearbyTransitToken:0,nearbyTransitExpected:0,nearbyTransitRadiusIndex:0,nearbyTransitRouteIndex:0,nearbyTransitTimer:null};let map;
 
 const TRANSPORT_TYPES=[
 {id:'bus',name:'Автобусы',group:'Городской транспорт',color:'#4da3ff',source:'GTFS-RT'},
@@ -177,23 +177,51 @@ function renderNearbyTransit(){
  const panel=$('nearbyTransit'),sub=$('nearbyTransitSub'),root=$('nearbyTransitRoutes');if(!panel||!sub||!root)return;
  panel.classList.remove('hidden');root.innerHTML='';
  const data=state.nearbyTransit;
- if(!data){sub.textContent='Ищу ближайшую остановку…';return}
- if(!data.stops.length){sub.textContent='Остановки рядом не найдены';root.innerHTML='<div class="nearby-empty">Проверил ближайшую область. Попробуйте другой адрес.</div>';return}
- const stop=data.selectedStop||data.stops[0];sub.textContent='Ближайшая: '+(stop.name||'остановка')+' · '+Math.round(stop.distance)+' м';
- if(data.loadingRoutes){root.innerHTML='<div class="nearby-empty">Нашёл остановку. Загружаю маршруты…</div>';return}
- if(!data.routes.length){root.innerHTML='<div class="nearby-empty">Остановка найдена, но маршруты для неё не опубликованы в открытых данных.</div>';return}
- for(const route of data.routes.slice(0,14)){
-  const b=document.createElement('button');b.className='nearby-route';b.dataset.relation=String(route.id);
-  const schedule=route.schedule||{};
-  b.innerHTML='<span class="nearby-route-icon"></span><span class="nearby-route-text"><span class="nearby-route-num"></span><span class="nearby-route-type"></span><span class="nearby-route-hours"></span><span class="nearby-route-source"></span></span>';
-  b.querySelector('.nearby-route-icon').innerHTML=transportIcon(transitTypeIcon(route.type));
-  b.querySelector('.nearby-route-num').textContent=route.ref||route.name||'—';
-  b.querySelector('.nearby-route-type').textContent=transitTypeLabel(route.type);
-  const h=b.querySelector('.nearby-route-hours');h.textContent=scheduleText(route);h.classList.toggle('loading',schedule.status==='loading');h.classList.toggle('unavailable',['unavailable','not_found','error'].includes(schedule.status));
-  b.querySelector('.nearby-route-source').textContent=schedule.source?('график: '+schedule.source):'';
-  b.onclick=()=>showTransitRelation(route,b);
-  root.appendChild(b);
- }
+ if(!data){sub.textContent='Ищу две ближайшие остановки…';return}
+ if(!data.stops.length){sub.textContent='Остановки рядом не найдены';root.innerHTML='<div class="nearby-empty">Проверил расширенную область до 5 км. Попробуйте другой адрес.</div>';return}
+ sub.textContent=data.stops.length>1?'Две ближайшие остановки':'Ближайшая остановка';
+ data.stops.slice(0,2).forEach((stop,stopIndex)=>{
+  const group=document.createElement('section');group.className='nearby-stop-group';
+  const head=document.createElement('div');head.className='nearby-stop-head';
+  head.innerHTML='<span class="nearby-stop-number"></span><span class="nearby-stop-main"><span class="nearby-stop-name"></span><span class="nearby-stop-distance"></span></span>';
+  head.querySelector('.nearby-stop-number').textContent=String(stopIndex+1);
+  head.querySelector('.nearby-stop-name').textContent=stop.name||'Остановка';
+  head.querySelector('.nearby-stop-distance').textContent=Math.round(stop.distance)+' м от адреса';
+  group.appendChild(head);
+  const routesBox=document.createElement('div');routesBox.className='nearby-stop-routes';
+  if(stop.loadingRoutes){
+   routesBox.innerHTML='<div class="nearby-empty">Загружаю маршруты…</div>';
+  }else if(!stop.routes?.length){
+   routesBox.innerHTML='<div class="nearby-empty">Маршруты для этой остановки не опубликованы.</div>';
+  }else{
+   for(const route of stop.routes.slice(0,14)){
+    const b=document.createElement('button');b.className='nearby-route';b.dataset.relation=String(route.id);
+    const schedule=route.schedule||{};
+    b.innerHTML='<span class="nearby-route-icon"></span><span class="nearby-route-text"><span class="nearby-route-num"></span><span class="nearby-route-type"></span><span class="nearby-route-hours"></span><span class="nearby-route-source"></span></span>';
+    b.querySelector('.nearby-route-icon').innerHTML=transportIcon(transitTypeIcon(route.type));
+    b.querySelector('.nearby-route-num').textContent=route.ref||route.name||'—';
+    b.querySelector('.nearby-route-type').textContent=transitTypeLabel(route.type);
+    const h=b.querySelector('.nearby-route-hours');h.textContent=scheduleText(route);h.classList.toggle('loading',schedule.status==='loading');h.classList.toggle('unavailable',['unavailable','not_found','error'].includes(schedule.status));
+    b.querySelector('.nearby-route-source').textContent=schedule.source?('график: '+schedule.source):'';
+    b.onclick=()=>showTransitRelation(route,b);
+    routesBox.appendChild(b);
+   }
+  }
+  group.appendChild(routesBox);root.appendChild(group);
+ })
+}
+function clearNearbyStopMarkers(){
+ for(const m of state.nearbyStopMarkers){try{m.remove()}catch{}}
+ state.nearbyStopMarkers=[]
+}
+function renderNearbyStopMarkers(){
+ clearNearbyStopMarkers();
+ if(!map||!state.nearbyTransit?.stops?.length)return;
+ state.nearbyTransit.stops.slice(0,2).forEach((stop,i)=>{
+  const el=document.createElement('div');el.className='nearby-stop-map-marker';el.textContent=String(i+1);
+  const marker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([+stop.lon,+stop.lat]).addTo(map);
+  state.nearbyStopMarkers.push(marker)
+ })
 }
 function nearbyWatchdog(token,stage){
  clearTimeout(state.nearbyTransitTimer);
@@ -209,19 +237,33 @@ function transitElementPoint(e){
 }
 function requestStops(token){
  if(token!==state.nearbyTransitToken||!state.destination)return;
- const radii=[650,1200,2200,3500],idx=state.nearbyTransitRadiusIndex,radius=radii[Math.min(idx,radii.length-1)],p=state.destination;
- const sub=$('nearbyTransitSub');if(sub)sub.textContent='Ищу остановки в радиусе '+(radius<1000?radius+' м':(radius/1000).toFixed(1)+' км')+'…';
+ const radii=[900,1800,3200,5000],idx=state.nearbyTransitRadiusIndex,radius=radii[Math.min(idx,radii.length-1)],p=state.destination;
+ const sub=$('nearbyTransitSub');if(sub)sub.textContent='Ищу 2 остановки в радиусе '+(radius<1000?radius+' м':(radius/1000).toFixed(1)+' км')+'…';
  nearbyWatchdog(token,'stops');
  if(window.RokinNative&&typeof window.RokinNative.fetchNearbyStops==='function'){window.RokinNative.fetchNearbyStops(+p.lat,+p.lon,radius,token);return}
- const q='[out:json][timeout:10];(node(around:'+radius+','+p.lat+','+p.lon+')["highway"="bus_stop"];nwr(around:'+radius+','+p.lat+','+p.lon+')["public_transport"="platform"]; );out tags center 80;';
+ const q='[out:json][timeout:10];(node(around:'+radius+','+p.lat+','+p.lon+')["highway"="bus_stop"];nwr(around:'+radius+','+p.lat+','+p.lon+')["public_transport"="platform"];);out tags center 120;';
  fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)}).then(r=>r.json()).then(x=>consumeNearbyStopsPayload(JSON.stringify(x),String(token))).catch(()=>nearbyStopsError('сеть',String(token)))
 }
 function advanceStopRadius(token,reason=''){
  if(token!==state.nearbyTransitToken)return;
  clearTimeout(state.nearbyTransitTimer);
  if(state.nearbyTransitRadiusIndex<3){state.nearbyTransitRadiusIndex++;requestStops(token);return}
- state.nearbyTransit={stops:[],routes:[],loadingRoutes:false};renderNearbyTransit();
- if(reason)toast('Остановки рядом не найдены или сервис временно недоступен',3000)
+ state.nearbyTransit={stops:[],routes:[],loadingRoutes:false};clearNearbyStopMarkers();renderNearbyTransit();
+ if(reason)toast('Не удалось найти две остановки рядом или сервис временно недоступен',3000)
+}
+function uniqueNearestStops(rawStops){
+ const out=[];
+ for(const stop of rawStops){
+  const normalized=String(stop.name||'').trim().toLowerCase().replace(/\s+/g,' ');
+  const duplicate=out.some(x=>{
+   const xn=String(x.name||'').trim().toLowerCase().replace(/\s+/g,' ');
+   if(normalized&&normalized!=='остановка'&&normalized===xn)return true;
+   return distanceM(stop,x)<55
+  });
+  if(!duplicate)out.push(stop);
+  if(out.length>=6)break
+ }
+ return out
 }
 function consumeNearbyStopsPayload(raw,requestId=''){
  const token=Number(requestId);if(token!==state.nearbyTransitToken)return;clearTimeout(state.nearbyTransitTimer);
@@ -235,30 +277,41 @@ function consumeNearbyStopsPayload(raw,requestId=''){
   stops.push({id:e.id,osmType:e.type,lat:p.lat,lon:p.lon,name,tags,distance:distanceM(target,p)})
  }
  stops.sort((a,b)=>a.distance-b.distance);
- if(!stops.length)return advanceStopRadius(token);
- state.nearbyTransit={stops:stops.slice(0,5),routes:[],selectedStop:stops[0],loadingRoutes:true};
- state.nearbyTransitRouteIndex=0;renderNearbyTransit();requestRoutesForStop(token,0)
+ const unique=uniqueNearestStops(stops);
+ if(unique.length<2&&state.nearbyTransitRadiusIndex<3)return advanceStopRadius(token);
+ if(!unique.length)return advanceStopRadius(token);
+ const selected=unique.slice(0,2).map(s=>({...s,routes:[],loadingRoutes:true}));
+ state.nearbyTransit={stops:selected,routes:[],loadingRoutes:true};
+ state.nearbyTransitRouteIndex=0;renderNearbyTransit();renderNearbyStopMarkers();requestRoutesForStop(token,0)
 }
 function nearbyStopsError(message,requestId=''){
  const token=Number(requestId);if(token!==state.nearbyTransitToken)return;advanceStopRadius(token,message)
 }
 function requestRoutesForStop(token,index){
  if(token!==state.nearbyTransitToken||!state.nearbyTransit?.stops?.length)return;
- const stop=state.nearbyTransit.stops[index];if(!stop)return advanceRouteStop(token);
- state.nearbyTransitRouteIndex=index;state.nearbyTransit.selectedStop=stop;state.nearbyTransit.loadingRoutes=true;renderNearbyTransit();nearbyWatchdog(token,'routes');
+ const stop=state.nearbyTransit.stops[index];if(!stop)return finishRouteGroups(token);
+ state.nearbyTransitRouteIndex=index;stop.loadingRoutes=true;renderNearbyTransit();nearbyWatchdog(token,'routes');
  if(window.RokinNative&&typeof window.RokinNative.fetchRoutesNearStop==='function'){window.RokinNative.fetchRoutesNearStop(String(stop.osmType||'node'),Number(stop.id||0),+stop.lat,+stop.lon,token);return}
- const q='[out:json][timeout:12];rel(around:500,'+stop.lat+','+stop.lon+')["type"="route"]["route"~"^(bus|trolleybus|tram|share_taxi)$"];out tags 100;';
+ const q='[out:json][timeout:12];rel(around:180,'+stop.lat+','+stop.lon+')["type"="route"]["route"~"^(bus|trolleybus|tram|share_taxi)$"];out tags 100;';
  fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)}).then(r=>r.json()).then(x=>consumeRoutesNearStopPayload(JSON.stringify(x),String(token))).catch(()=>routesNearStopError('сеть',String(token)))
 }
+function finishRouteGroups(token){
+ if(token!==state.nearbyTransitToken||!state.nearbyTransit)return;
+ clearTimeout(state.nearbyTransitTimer);state.nearbyTransit.loadingRoutes=false;
+ state.nearbyTransit.routes=state.nearbyTransit.stops.flatMap(s=>s.routes||[]);
+ renderNearbyTransit()
+}
 function advanceRouteStop(token,reason=''){
- if(token!==state.nearbyTransitToken)return;clearTimeout(state.nearbyTransitTimer);
+ if(token!==state.nearbyTransitToken||!state.nearbyTransit)return;clearTimeout(state.nearbyTransitTimer);
+ const current=state.nearbyTransit.stops[state.nearbyTransitRouteIndex];
+ if(current){current.loadingRoutes=false;if(!Array.isArray(current.routes))current.routes=[]}
  const next=state.nearbyTransitRouteIndex+1;
- if(next<Math.min(3,state.nearbyTransit?.stops?.length||0)){requestRoutesForStop(token,next);return}
- if(state.nearbyTransit){state.nearbyTransit.loadingRoutes=false;state.nearbyTransit.routes=[]}renderNearbyTransit();
- if(reason)toast('Остановка найдена, но список маршрутов не загрузился',2800)
+ if(next<Math.min(2,state.nearbyTransit.stops.length)){requestRoutesForStop(token,next);return}
+ finishRouteGroups(token);
+ if(reason&&!(state.nearbyTransit.routes||[]).length)toast('Остановки найдены, но список маршрутов не загрузился',2800)
 }
 function consumeRoutesNearStopPayload(raw,requestId=''){
- const token=Number(requestId);if(token!==state.nearbyTransitToken)return;clearTimeout(state.nearbyTransitTimer);
+ const token=Number(requestId);if(token!==state.nearbyTransitToken||!state.nearbyTransit)return;clearTimeout(state.nearbyTransitTimer);
  let data;try{data=typeof raw==='string'?JSON.parse(raw):raw}catch{return advanceRouteStop(token,'неверный ответ')}
  const byKey=new Map();
  for(const rel of Array.isArray(data?.elements)?data.elements:[]){
@@ -271,15 +324,17 @@ function consumeRoutesNearStopPayload(raw,requestId=''){
   if(!byKey.has(key))byKey.set(key,item)
  }
  const routes=[...byKey.values()].sort((a,b)=>String(a.ref).localeCompare(String(b.ref),'ru',{numeric:true}));
- if(!routes.length)return advanceRouteStop(token);
- state.nearbyTransit.routes=routes;state.nearbyTransit.loadingRoutes=false;renderNearbyTransit();requestRouteSchedules(token,routes)
+ const stop=state.nearbyTransit.stops[state.nearbyTransitRouteIndex];
+ if(stop){stop.routes=routes;stop.loadingRoutes=false}
+ if(routes.length)requestRouteSchedules(token,routes);
+ renderNearbyTransit();advanceRouteStop(token)
 }
 function routesNearStopError(message,requestId=''){
  const token=Number(requestId);if(token!==state.nearbyTransitToken)return;advanceRouteStop(token,message)
 }
 function requestRouteSchedules(token,routes){
  const city=state.cityContext?.city||'';
- for(const route of routes.slice(0,14)){
+ for(const route of routes.slice(0,10)){
   if(route.schedule?.status==='ok')continue;
   if(window.RokinNative&&typeof window.RokinNative.fetchRouteSchedule==='function'){
    window.RokinNative.fetchRouteSchedule(city,route.type,String(route.ref||''),token)
@@ -290,18 +345,20 @@ function requestRouteSchedules(token,routes){
 function consumeRouteSchedulePayload(raw,requestId=''){
  const token=Number(requestId);if(token!==state.nearbyTransitToken||!state.nearbyTransit)return;
  let d;try{d=typeof raw==='string'?JSON.parse(raw):raw}catch{return}
- const routes=state.nearbyTransit.routes||[];
- for(const route of routes){
-  if(String(route.ref)===String(d.ref)&&String(route.type)===String(d.type)){
-   route.schedule={status:d.status||'not_found',from:d.from||'',to:d.to||'',source:d.source||''}
+ for(const stop of state.nearbyTransit.stops||[]){
+  for(const route of stop.routes||[]){
+   if(String(route.ref)===String(d.ref)&&String(route.type)===String(d.type)){
+    route.schedule={status:d.status||'not_found',from:d.from||'',to:d.to||'',source:d.source||''}
+   }
   }
  }
+ state.nearbyTransit.routes=(state.nearbyTransit.stops||[]).flatMap(s=>s.routes||[]);
  renderNearbyTransit()
 }
 function loadNearbyTransitForPlace(p){
  if(!p)return;
  const token=++state.nearbyTransitToken;clearTimeout(state.nearbyTransitTimer);
- state.nearbyTransit=null;state.nearbyTransitRadiusIndex=0;state.nearbyTransitRouteIndex=0;renderNearbyTransit();clearTransitOverlay();requestStops(token)
+ state.nearbyTransit=null;state.nearbyTransitRadiusIndex=0;state.nearbyTransitRouteIndex=0;clearNearbyStopMarkers();renderNearbyTransit();clearTransitOverlay();requestStops(token)
 }
 
 function showTransitRelation(route,button){
