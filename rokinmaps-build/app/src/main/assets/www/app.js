@@ -92,8 +92,8 @@ if(transportEnabled('airplane')||transportEnabled('helicopter')){
 e.textContent=n?('Включено слоёв: '+n+'. Для наземного транспорта нужен открытый региональный live-источник.'):'Включите нужные виды транспорта.'
 }
 function toggleTransport(id){transportPrefs[id]=!transportEnabled(id);saveTransportPrefs();renderTransportPanel();applyTransportVisibility(id);const t=TRANSPORT_TYPES.find(x=>x.id===id);if(id==='airplane'||id==='helicopter'){if(transportPrefs[id])requestLiveAircraft(true);else clearTransportType(id)}if(transportPrefs[id]&&id!=='airplane'&&id!=='helicopter')toast((t?.name||'Слой')+' включён. Нужен открытый live-источник для текущего региона.',3600)}
-function openTransport(){renderTransportPanel();$('transportModal').classList.remove('hidden')}
-function closeTransport(){$('transportModal').classList.add('hidden')}
+function openTransport(){renderTransportPanel();showSheetPanel('transport')}
+function closeTransport(){$('transportModal')?.classList.add('hidden')}
 function markerKey(v,i){return String(v.id??v.vehicleId??v.icao24??v.mmsi??v.label??i)}
 function makeVehicleMarker(type,v){const t=TRANSPORT_TYPES.find(x=>x.id===type);const el=document.createElement('div');el.className='vehicle-marker';el.style.setProperty('--vehicle-color',t?.color||'#6d7dff');const route=v.route??v.routeShortName??v.line??'',label=(v.callsign||v.registration||v.label||'LIVE').trim();el.innerHTML='<div class="vehicle-bubble">'+transportIcon(type)+'</div><div class="vehicle-label"></div>'+(route?'<div class="vehicle-route"></div>':'');el.querySelector('.vehicle-label').textContent=label;if(route)el.querySelector('.vehicle-route').textContent=String(route).slice(0,5);el.onclick=e=>{e.stopPropagation();const bits=[t?.name,v.label||v.name||v.callsign||v.registration||'',route?('маршрут '+route):'',Number.isFinite(+v.speed)?('скорость '+Math.round(+v.speed)+' км/ч'):'',Number.isFinite(+v.altitude)?('высота '+Math.round(+v.altitude)+' м'):''].filter(Boolean);toast(bits.join(' · '),4600)};return el}
 function setTransportVehicles(type,vehicles){if(!map||!TRANSPORT_TYPES.some(x=>x.id===type))return;let bucket=transportMarkers.get(type);if(!bucket){bucket=new Map();transportMarkers.set(type,bucket)}const seen=new Set();(vehicles||[]).forEach((v,i)=>{const lat=+(v.lat??v.latitude),lon=+(v.lon??v.lng??v.longitude);if(!Number.isFinite(lat)||!Number.isFinite(lon))return;const key=markerKey(v,i);seen.add(key);let item=bucket.get(key);if(!item){const marker=new maplibregl.Marker({element:makeVehicleMarker(type,v),anchor:'center'}).setLngLat([lon,lat]).addTo(map);item={marker,vehicle:v};bucket.set(key,item)}else{item.vehicle=v;item.marker.setLngLat([lon,lat])}item.marker.getElement().style.display=transportEnabled(type)?'block':'none'});for(const [key,item] of bucket){if(!seen.has(key)){item.marker.remove();bucket.delete(key)}}}
@@ -686,13 +686,21 @@ function search(q){
  const params=new URLSearchParams({format:'jsonv2',limit:'8',addressdetails:'1','accept-language':'ru',q:query});if(country)params.set('countrycodes',country);
  fetch('https://nominatim.openstreetmap.org/search?'+params.toString()).then(r=>r.json()).then(x=>consumeExactSearch(x,String(id))).catch(()=>exactSearchError('сеть',String(id)))
 }
+function showSheetPanel(name){
+ const route=$('routePanel'),search=$('searchModal'),transport=$('transportModal');
+ [route,search,transport].forEach(x=>x?.classList.add('hidden'));
+ if(name==='search'||name==='history')search?.classList.remove('hidden');
+ else if(name==='transport')transport?.classList.remove('hidden');
+ else route?.classList.remove('hidden');
+ const snap=name==='route'?'mid':'max';setSheetSnap(snap,true)
+}
 function openSearch(target='destination'){
- state.selectTarget=target;state.searchMode='search';$('searchInput').value='';setSearchContextUI();$('searchModal').classList.remove('hidden');renderSearchHistory();setBottomActive('search');setTimeout(()=>$('searchInput').focus(),100)
+ state.selectTarget=target;state.searchMode='search';$('searchInput').value='';setSearchContextUI();showSheetPanel('search');renderSearchHistory();setBottomActive('search');setTimeout(()=>$('searchInput').focus(),100)
 }
 function openHistory(){
- state.selectTarget='destination';state.searchMode='history';$('searchInput').value='';setSearchContextUI();$('searchModal').classList.remove('hidden');renderSearchHistory();setBottomActive('history')
+ state.selectTarget='destination';state.searchMode='history';$('searchInput').value='';setSearchContextUI();showSheetPanel('history');renderSearchHistory();setBottomActive('history')
 }
-function closeSearch(){$('searchModal').classList.add('hidden')}
+function closeSearch(){$('searchModal')?.classList.add('hidden')}
 function routeBase(){if(state.mode==='foot')return'https://routing.openstreetmap.de/routed-foot/route/v1/driving';if(state.mode==='bike')return'https://routing.openstreetmap.de/routed-bike/route/v1/driving';return'https://router.project-osrm.org/route/v1/driving'}
 async function buildRoute(){if(!state.origin||!state.destination||!map)return;setHint('Строю маршрут…');$('routeSummary').classList.add('hidden');const a=state.origin,b=state.destination,u=routeBase()+'/'+a.lon+','+a.lat+';'+b.lon+','+b.lat+'?overview=full&geometries=geojson&steps=true&alternatives=false';try{const r=await fetch(u);if(!r.ok)throw 0;const d=await r.json();if(d.code!=='Ok'||!d.routes?.length)throw 0;const route=d.routes[0];state.route=route;map.getSource('route')?.setData({type:'Feature',properties:{},geometry:route.geometry});const c=route.geometry.coordinates,bb=c.reduce((z,x)=>z.extend(x),new maplibregl.LngLatBounds(c[0],c[0]));map.fitBounds(bb,{padding:innerWidth<720?{top:320,bottom:95,left:40,right:40}:90,duration:750,maxZoom:16});$('durationText').textContent=formatDuration(route.duration);$('distanceText').textContent=formatDistance(route.distance);$('routeSummary').classList.remove('hidden');setHint('Маршрут готов')}catch(e){clearRouteLine();setHint('Маршрут не построен');toast('Не удалось построить маршрут')}}
 function formatDuration(s){const m=Math.max(1,Math.round(s/60));if(m<60)return m+' мин';const h=Math.floor(m/60),r=m%60;return r?h+' ч '+r+' мин':h+' ч'}function formatDistance(m){return m<1000?Math.round(m)+' м':(m/1000).toFixed(m<10000?1:0)+' км'}function clearRouteLine(){map?.getSource('route')?.setData({type:'FeatureCollection',features:[]});$('routeSummary').classList.add('hidden')}
