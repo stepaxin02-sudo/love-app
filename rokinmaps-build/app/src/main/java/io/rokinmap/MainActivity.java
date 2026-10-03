@@ -83,6 +83,8 @@ public class MainActivity extends Activity {
         settings.setDisplayZoomControls(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setBlockNetworkLoads(false);
+        settings.setLoadsImagesAutomatically(true);
         settings.setUserAgentString(settings.getUserAgentString() + " RokinMaps/0.2.15");
 
         webView.setWebViewClient(new WebViewClient() {
