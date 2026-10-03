@@ -187,19 +187,43 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void fetchRoutesNearStop(double lat, double lon, int requestId) {
+        public void fetchRoutesNearStop(
+                String osmType,
+                long osmId,
+                double lat,
+                double lon,
+                int requestId
+        ) {
             new Thread(() -> {
+                String sourceSelector;
+                String parentSelector;
+                if ("way".equals(osmType)) {
+                    sourceSelector = "way(" + osmId + ")->.stop;";
+                    parentSelector = "rel(bw.stop)";
+                } else if ("relation".equals(osmType)) {
+                    sourceSelector = "relation(" + osmId + ")->.stop;";
+                    parentSelector = "rel(br.stop)";
+                } else {
+                    sourceSelector = "node(" + osmId + ")->.stop;";
+                    parentSelector = "rel(bn.stop)";
+                }
+
                 String query = String.format(
                         Locale.US,
                         "[out:json][timeout:12];"
-                                + "rel(around:500,%.6f,%.6f)"
+                                + sourceSelector
+                                + "("
+                                + parentSelector
                                 + "[\"type\"=\"route\"]"
                                 + "[\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"];"
-                                + "out tags 100;",
+                                + "rel(around:140,%.6f,%.6f)"
+                                + "[\"type\"=\"route\"]"
+                                + "[\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"];"
+                                + ");out tags 100;",
                         lat, lon
                 );
                 try {
-                    String body = requestOverpass(query, 7000, 12000);
+                    String body = requestOverpass(query, 6500, 11000);
                     emitTransportCallback("onRoutesNearStop", body, String.valueOf(requestId));
                 } catch (Exception e) {
                     emitTransportCallback(
