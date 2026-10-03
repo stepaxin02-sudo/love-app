@@ -528,9 +528,36 @@ function toggleNavSound(){
 
 function toast(msg,ms=3000){const e=$('toast');e.textContent=msg;e.classList.remove('hidden');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.add('hidden'),ms)}
 function setHint(t){$('hintText').textContent=t}function safeName(p){return p?.display_name||p?.name||'Точка на карте'}
-function initMap(){if(!window.maplibregl){toast('Не удалось загрузить движок карты');return}map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/liberty',center:[73.3686,54.9893],zoom:11,attributionControl:false,maxPitch:70});['dragstart','zoomstart','rotatestart','pitchstart'].forEach(evt=>map.on(evt,e=>{if(nav.active&&e.originalEvent)setNavFollow(false)}));map.on('load',()=>{map.addSource('route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});map.addLayer({id:'route-shadow',type:'line',source:'route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#0b1020','line-width':10,'line-opacity':.42}});map.addLayer({id:'route-line',type:'line',source:'route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#6d7dff','line-width':6}});map.addSource('transit-route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});map.addLayer({id:'transit-route-shadow',type:'line',source:'transit-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#101522','line-width':9,'line-opacity':.48}});map.addLayer({id:'transit-route-line',type:'line',source:'transit-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffb84d','line-width':5,'line-opacity':.95}});startLiveTransport()});map.on('click',e=>{if(!$('searchModal').classList.contains('hidden'))return;const p={lat:e.lngLat.lat,lon:e.lngLat.lng,display_name:e.lngLat.lat.toFixed(5)+', '+e.lngLat.lng.toFixed(5)};if(!state.origin)setPlace('origin',p);else if(!state.destination)setPlace('destination',p)})}
+let mapStyleStage=0,mapErrorCount=0,mapStarted=false,mapFallbackTimer=null;
+const OSM_RASTER_STYLE={version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'osm-raster',type:'raster',source:'osm',minzoom:0,maxzoom:19}]};
+function ensureOperationalLayers(){
+ if(!map)return;
+ if(!map.getSource('route'))map.addSource('route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+ if(!map.getLayer('route-shadow'))map.addLayer({id:'route-shadow',type:'line',source:'route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffffff','line-width':10,'line-opacity':.75}});
+ if(!map.getLayer('route-line'))map.addLayer({id:'route-line',type:'line',source:'route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#4d7df3','line-width':6}});
+ if(!map.getSource('transit-route'))map.addSource('transit-route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+ if(!map.getLayer('transit-route-shadow'))map.addLayer({id:'transit-route-shadow',type:'line',source:'transit-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffffff','line-width':9,'line-opacity':.82}});
+ if(!map.getLayer('transit-route-line'))map.addLayer({id:'transit-route-line',type:'line',source:'transit-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ec9a43','line-width':5,'line-opacity':.96}})
+}
+function scheduleMapFallback(){
+ clearTimeout(mapFallbackTimer);
+ mapFallbackTimer=setTimeout(()=>{
+  if(!map)return;
+  if(mapStyleStage===0){mapStyleStage=1;mapErrorCount=0;map.setStyle('https://tiles.openfreemap.org/styles/positron');scheduleMapFallback();return}
+  if(mapStyleStage===1){mapStyleStage=2;mapErrorCount=0;map.setStyle(OSM_RASTER_STYLE)}
+ },6500)
+}
+function initMap(){
+ if(!window.maplibregl){toast('Не удалось загрузить движок карты');return}
+ map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/bright',center:[73.3686,54.9893],zoom:11,attributionControl:false,maxPitch:70});
+ scheduleMapFallback();
+ map.on('style.load',()=>{clearTimeout(mapFallbackTimer);ensureOperationalLayers();if(!mapStarted){mapStarted=true;startLiveTransport()}});
+ map.on('error',()=>{mapErrorCount++;if(mapErrorCount>=5&&mapStyleStage<2){mapStyleStage=2;clearTimeout(mapFallbackTimer);try{map.setStyle(OSM_RASTER_STYLE)}catch{}}});
+ ['dragstart','zoomstart','rotatestart','pitchstart'].forEach(evt=>map.on(evt,e=>{if(nav.active&&e.originalEvent)setNavFollow(false)}));
+ map.on('click',e=>{if(!$('searchModal').classList.contains('hidden'))return;const p={lat:e.lngLat.lat,lon:e.lngLat.lng,display_name:e.lngLat.lat.toFixed(5)+', '+e.lngLat.lng.toFixed(5)};if(!state.origin)setPlace('origin',p);else if(!state.destination)setPlace('destination',p)})
+}
 function markerElement(kind){const e=document.createElement('div');e.className='marker-pin '+kind;return e}function setMarker(kind,p){if(state.markers[kind])state.markers[kind].remove();state.markers[kind]=new maplibregl.Marker({element:markerElement(kind),anchor:'bottom'}).setLngLat([+p.lon,+p.lat]).addTo(map)}
-function setPlace(kind,p){state[kind]=p;setMarker(kind,p);const t=$(kind+'Text');t.textContent=safeName(p);t.classList.remove('muted');if(kind==='destination'){map.easeTo({center:[+p.lon,+p.lat],zoom:14,duration:650});loadNearbyTransitForPlace(p)}else if(kind==='origin'&&state.destination){loadNearbyTransitForPlace(state.destination)}if(state.origin&&state.destination)buildRoute();else setHint('Теперь выберите '+(state.origin?'пункт назначения':'точку отправления'))}
+function setPlace(kind,p){state[kind]=p;setMarker(kind,p);const t=$(kind+'Text');t.textContent=safeName(p);t.classList.remove('muted');if(kind==='destination'){map.easeTo({center:[+p.lon,+p.lat],zoom:14,duration:650});if(state.mode==='car')loadNearbyTransitForPlace(p);else cancelTransitPlanner()}else if(kind==='origin'&&state.destination){if(state.mode==='car')loadNearbyTransitForPlace(state.destination);else cancelTransitPlanner()}if(state.origin&&state.destination)buildRoute();else setHint('Теперь выберите '+(state.origin?'пункт назначения':'точку отправления'))}
 function loadSearchHistory(){
  try{const v=JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY)||'[]');return Array.isArray(v)?v:[]}catch{return[]}
 }
@@ -543,7 +570,7 @@ function saveSearchHistory(place){
 function clearSearchHistory(){try{localStorage.removeItem(SEARCH_HISTORY_KEY)}catch{};renderSearchHistory()}
 function searchResultTitle(place){return place?.name||String(place?.display_name||'').split(',')[0]||'Место'}
 function selectSearchPlace(place){
- saveSearchHistory(place);setPlace(state.selectTarget||'destination',place);closeSearch();setBottomActive('route')
+ saveSearchHistory(place);setPlace(state.selectTarget||'destination',place);openRoutePanel()
 }
 function makeSearchResult(place,isHistory=false){
  const b=document.createElement('button');b.className='result'+(isHistory?' history-result':'');
