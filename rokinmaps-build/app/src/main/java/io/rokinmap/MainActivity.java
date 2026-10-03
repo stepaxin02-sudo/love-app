@@ -135,7 +135,7 @@ public class MainActivity extends Activity {
                         connection.setReadTimeout(11000);
                         connection.setUseCaches(false);
                         connection.setRequestProperty("Accept", "application/json");
-                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.8 Android");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.9 Android");
 
                         int code = connection.getResponseCode();
                         InputStream stream = code >= 200 && code < 300
@@ -160,7 +160,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void fetchNearbyStops(double lat, double lon, int radiusMeters, int requestId) {
-            final int radius = Math.max(400, Math.min(3500, radiusMeters));
+            final int radius = Math.max(400, Math.min(5000, radiusMeters));
             new Thread(() -> {
                 String query = String.format(
                         Locale.US,
@@ -386,7 +386,7 @@ public class MainActivity extends Activity {
                 connection.setUseCaches(true);
                 connection.setRequestProperty("Accept", "text/html,application/xhtml+xml");
                 connection.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9");
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 RokinMaps/0.2.8");
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 RokinMaps/0.2.9");
                 int code = connection.getResponseCode();
                 if (code < 200 || code >= 300) return "";
                 return readAll(connection.getInputStream());
@@ -466,7 +466,7 @@ public class MainActivity extends Activity {
                         "Content-Type",
                         "application/x-www-form-urlencoded; charset=UTF-8"
                 );
-                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.8 Android");
+                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.9 Android");
 
                 String payload = "data=" + URLEncoder.encode(
                         query,
