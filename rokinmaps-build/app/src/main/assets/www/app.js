@@ -213,7 +213,7 @@ function requestStops(token){
  const sub=$('nearbyTransitSub');if(sub)sub.textContent='Ищу остановки в радиусе '+(radius<1000?radius+' м':(radius/1000).toFixed(1)+' км')+'…';
  nearbyWatchdog(token,'stops');
  if(window.RokinNative&&typeof window.RokinNative.fetchNearbyStops==='function'){window.RokinNative.fetchNearbyStops(+p.lat,+p.lon,radius,token);return}
- const q='[out:json][timeout:10];(node(around:'+radius+','+p.lat+','+p.lon+')["highway"="bus_stop"];nwr(around:'+radius+','+p.lat+','+p.lon+')["public_transport"="platform"];);out center tags 80;';
+ const q='[out:json][timeout:10];(node(around:'+radius+','+p.lat+','+p.lon+')["highway"="bus_stop"];nwr(around:'+radius+','+p.lat+','+p.lon+')["public_transport"="platform"]; );out tags center 80;';
  fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)}).then(r=>r.json()).then(x=>consumeNearbyStopsPayload(JSON.stringify(x),String(token))).catch(()=>nearbyStopsError('сеть',String(token)))
 }
 function advanceStopRadius(token,reason=''){
@@ -246,7 +246,7 @@ function requestRoutesForStop(token,index){
  if(token!==state.nearbyTransitToken||!state.nearbyTransit?.stops?.length)return;
  const stop=state.nearbyTransit.stops[index];if(!stop)return advanceRouteStop(token);
  state.nearbyTransitRouteIndex=index;state.nearbyTransit.selectedStop=stop;state.nearbyTransit.loadingRoutes=true;renderNearbyTransit();nearbyWatchdog(token,'routes');
- if(window.RokinNative&&typeof window.RokinNative.fetchRoutesNearStop==='function'){window.RokinNative.fetchRoutesNearStop(+stop.lat,+stop.lon,token);return}
+ if(window.RokinNative&&typeof window.RokinNative.fetchRoutesNearStop==='function'){window.RokinNative.fetchRoutesNearStop(String(stop.osmType||'node'),Number(stop.id||0),+stop.lat,+stop.lon,token);return}
  const q='[out:json][timeout:12];rel(around:500,'+stop.lat+','+stop.lon+')["type"="route"]["route"~"^(bus|trolleybus|tram|share_taxi)$"];out tags 100;';
  fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)}).then(r=>r.json()).then(x=>consumeRoutesNearStopPayload(JSON.stringify(x),String(token))).catch(()=>routesNearStopError('сеть',String(token)))
 }
@@ -279,7 +279,7 @@ function routesNearStopError(message,requestId=''){
 }
 function requestRouteSchedules(token,routes){
  const city=state.cityContext?.city||'';
- for(const route of routes.slice(0,10)){
+ for(const route of routes.slice(0,14)){
   if(route.schedule?.status==='ok')continue;
   if(window.RokinNative&&typeof window.RokinNative.fetchRouteSchedule==='function'){
    window.RokinNative.fetchRouteSchedule(city,route.type,String(route.ref||''),token)
