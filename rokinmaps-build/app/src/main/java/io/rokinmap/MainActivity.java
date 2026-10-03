@@ -183,7 +183,7 @@ public class MainActivity extends Activity {
                         connection.setReadTimeout(11000);
                         connection.setUseCaches(false);
                         connection.setRequestProperty("Accept", "application/json");
-                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.11 Android");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.12 Android");
 
                         int code = connection.getResponseCode();
                         InputStream stream = code >= 200 && code < 300
@@ -578,9 +578,10 @@ public class MainActivity extends Activity {
 
         private String requestOverpass(String query, int connectTimeoutMs, int readTimeoutMs) throws Exception {
             String[] endpoints = new String[]{
+                    "https://overpass.private.coffee/api/interpreter",
+                    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
                     "https://overpass-api.de/api/interpreter",
-                    "https://overpass.kumi.systems/api/interpreter",
-                    "https://overpass.private.coffee/api/interpreter"
+                    "https://overpass.osm.jp/api/interpreter"
             };
 
             ExecutorService executor = Executors.newFixedThreadPool(endpoints.length);
@@ -603,7 +604,12 @@ public class MainActivity extends Activity {
                         String body = future.get();
                         if (body != null && body.contains("{")) return body;
                     } catch (Exception e) {
-                        last = e;
+                        Throwable cause = e;
+                        if (e instanceof java.util.concurrent.ExecutionException && e.getCause() != null) {
+                            cause = e.getCause();
+                        }
+                        if (cause instanceof Exception) last = (Exception) cause;
+                        else last = new RuntimeException(cause == null ? "unknown" : cause.getMessage());
                     }
                 }
             } finally {
@@ -633,7 +639,7 @@ public class MainActivity extends Activity {
                         "Content-Type",
                         "application/x-www-form-urlencoded; charset=UTF-8"
                 );
-                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.10 Android");
+                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.12 Android");
 
                 String payload = "data=" + URLEncoder.encode(
                         query,
@@ -659,10 +665,24 @@ public class MainActivity extends Activity {
         }
 
         private String friendlyError(Exception e) {
-            if (e instanceof SocketTimeoutException) return "сервер не успел ответить";
-            String name = e.getClass().getSimpleName();
-            if (name == null || name.isEmpty()) return "ошибка сети";
-            return name;
+            Throwable current = e;
+            while (current instanceof java.util.concurrent.ExecutionException && current.getCause() != null) {
+                current = current.getCause();
+            }
+            if (current instanceof SocketTimeoutException) return "сервер не успел ответить";
+            String message = current == null ? "" : current.getMessage();
+            if (message != null && message.startsWith("HTTP ")) {
+                if (message.contains("429")) return "сервер временно ограничил запросы";
+                if (message.contains("504") || message.contains("502") || message.contains("503")) {
+                    return "сервер маршрутов временно перегружен";
+                }
+                return "сервер маршрутов ответил с ошибкой";
+            }
+            String name = current == null ? "" : current.getClass().getSimpleName();
+            if ("UnknownHostException".equals(name)) return "нет соединения с сервером";
+            if ("ConnectException".equals(name)) return "сервер маршрутов недоступен";
+            if ("SSLException".equals(name) || "SSLHandshakeException".equals(name)) return "ошибка защищённого соединения";
+            return "не удалось получить данные маршрутов";
         }
 
         private String readAll(InputStream stream) throws Exception {
