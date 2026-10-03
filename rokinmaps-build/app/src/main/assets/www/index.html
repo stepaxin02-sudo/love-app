@@ -45,6 +45,7 @@
     </section>
     <section class="quick panel">
       <button id="centerBtn"><span>◎</span><small>Где я</small></button>
+      <button id="transportBtn" class="transport-quick"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v10A2.5 2.5 0 0 1 17.5 18H17v2h-2v-2H9v2H7v-2h-.5A2.5 2.5 0 0 1 4 15.5v-10Zm2 0V10h12V5.5a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5Zm0 6.5v3.5c0 .28.22.5.5.5h11a.5.5 0 0 0 .5-.5V12H6Zm2 1h2v2H8v-2Zm6 0h2v2h-2v-2Z"/></svg></span><small>Транспорт</small></button>
       <button id="zoomInBtn"><span>＋</span><small>Ближе</small></button>
       <button id="zoomOutBtn"><span>−</span><small>Дальше</small></button>
       <button id="clearBtn"><span>×</span><small>Сброс</small></button>
@@ -60,6 +61,20 @@
       </div>
       <div class="search-state" id="searchState">Введите адрес и нажмите «Найти»</div>
       <div class="results" id="results"></div>
+    </section>
+  </div>
+  <div class="transport-backdrop hidden" id="transportModal">
+    <section class="transport-sheet">
+      <div class="sheet-handle"></div>
+      <div class="transport-head">
+        <div>
+          <div class="transport-title">Транспорт на карте</div>
+          <div class="transport-sub">Каждый вид — со своей иконкой и отдельным слоем</div>
+        </div>
+        <button class="transport-close" id="closeTransport" aria-label="Закрыть">×</button>
+      </div>
+      <div class="transport-groups" id="transportGroups"></div>
+      <div class="transport-note" id="transportNote">Включите нужные виды транспорта.</div>
     </section>
   </div>
   <div class="toast hidden" id="toast"></div>
