@@ -23,6 +23,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -122,11 +123,11 @@ public class MainActivity extends Activity {
                     try {
                         connection = (HttpURLConnection) new URL(endpoints[i]).openConnection();
                         connection.setRequestMethod("GET");
-                        connection.setConnectTimeout(9000);
-                        connection.setReadTimeout(12000);
+                        connection.setConnectTimeout(8000);
+                        connection.setReadTimeout(11000);
                         connection.setUseCaches(false);
                         connection.setRequestProperty("Accept", "application/json");
-                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.7 Android");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.8 Android");
 
                         int code = connection.getResponseCode();
                         InputStream stream = code >= 200 && code < 300
@@ -140,7 +141,7 @@ public class MainActivity extends Activity {
                         }
                         lastError = names[i] + " HTTP " + code;
                     } catch (Exception e) {
-                        lastError = names[i] + " " + e.getClass().getSimpleName();
+                        lastError = names[i] + " " + friendlyError(e);
                     } finally {
                         if (connection != null) connection.disconnect();
                     }
@@ -150,23 +151,54 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void fetchNearbyTransit(double lat, double lon, int radiusMeters) {
-            final int radius = Math.max(300, Math.min(1800, radiusMeters));
+        public void fetchNearbyStops(double lat, double lon, int radiusMeters, int requestId) {
+            final int radius = Math.max(400, Math.min(3500, radiusMeters));
             new Thread(() -> {
                 String query = String.format(
                         Locale.US,
-                        "[out:json][timeout:20];"
-                                + "(node(around:%d,%.6f,%.6f)[\"highway\"=\"bus_stop\"];"
-                                + "node(around:%d,%.6f,%.6f)[\"public_transport\"=\"platform\"];)->.stops;"
-                                + "rel(bn.stops)[\"type\"=\"route\"][\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"]->.routes;"
-                                + "(.stops;.routes;);out body;",
-                        radius, lat, lon, radius, lat, lon
+                        "[out:json][timeout:10];("
+                                + "node(around:%d,%.6f,%.6f)[\"highway\"=\"bus_stop\"];"
+                                + "nwr(around:%d,%.6f,%.6f)[\"public_transport\"=\"platform\"];"
+                                + "nwr(around:%d,%.6f,%.6f)[\"public_transport\"=\"station\"][\"bus\"=\"yes\"];"
+                                + ");out center tags 80;",
+                        radius, lat, lon,
+                        radius, lat, lon,
+                        radius, lat, lon
                 );
                 try {
-                    String body = requestOverpass(query);
-                    emitTransportCallback("onNearbyTransit", body, "OpenStreetMap");
+                    String body = requestOverpass(query, 7000, 11000);
+                    emitTransportCallback("onNearbyStops", body, String.valueOf(requestId));
                 } catch (Exception e) {
-                    emitTransportCallback("onTransitError", "Остановки: " + e.getClass().getSimpleName(), "");
+                    emitTransportCallback(
+                            "onNearbyStopsError",
+                            friendlyError(e),
+                            String.valueOf(requestId)
+                    );
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void fetchRoutesNearStop(double lat, double lon, int requestId) {
+            new Thread(() -> {
+                String query = String.format(
+                        Locale.US,
+                        "[out:json][timeout:12];"
+                                + "rel(around:500,%.6f,%.6f)"
+                                + "[\"type\"=\"route\"]"
+                                + "[\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"];"
+                                + "out tags 100;",
+                        lat, lon
+                );
+                try {
+                    String body = requestOverpass(query, 7000, 12000);
+                    emitTransportCallback("onRoutesNearStop", body, String.valueOf(requestId));
+                } catch (Exception e) {
+                    emitTransportCallback(
+                            "onRoutesNearStopError",
+                            friendlyError(e),
+                            String.valueOf(requestId)
+                    );
                 }
             }).start();
         }
@@ -175,20 +207,21 @@ public class MainActivity extends Activity {
         public void fetchTransitRoute(long relationId) {
             if (relationId <= 0) return;
             new Thread(() -> {
-                String query = "[out:json][timeout:25];relation(" + relationId + ");out geom;";
+                String query = "[out:json][timeout:20];relation(" + relationId + ");out geom;";
                 try {
-                    String body = requestOverpass(query);
+                    String body = requestOverpass(query, 8000, 16000);
                     emitTransportCallback("onTransitRoute", body, String.valueOf(relationId));
                 } catch (Exception e) {
-                    emitTransportCallback("onTransitError", "Маршрут: " + e.getClass().getSimpleName(), "");
+                    emitTransportCallback("onTransitError", "Маршрут: " + friendlyError(e), "");
                 }
             }).start();
         }
 
-        private String requestOverpass(String query) throws Exception {
+        private String requestOverpass(String query, int connectTimeoutMs, int readTimeoutMs) throws Exception {
             String[] endpoints = new String[]{
                     "https://overpass-api.de/api/interpreter",
-                    "https://overpass.kumi.systems/api/interpreter"
+                    "https://overpass.kumi.systems/api/interpreter",
+                    "https://overpass.private.coffee/api/interpreter"
             };
             Exception last = null;
 
@@ -197,13 +230,13 @@ public class MainActivity extends Activity {
                 try {
                     connection = (HttpURLConnection) new URL(endpoint).openConnection();
                     connection.setRequestMethod("POST");
-                    connection.setConnectTimeout(9000);
-                    connection.setReadTimeout(18000);
+                    connection.setConnectTimeout(connectTimeoutMs);
+                    connection.setReadTimeout(readTimeoutMs);
                     connection.setUseCaches(false);
                     connection.setDoOutput(true);
                     connection.setRequestProperty("Accept", "application/json");
                     connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-                    connection.setRequestProperty("User-Agent", "RokinMaps/0.2.7 Android");
+                    connection.setRequestProperty("User-Agent", "RokinMaps/0.2.8 Android");
 
                     String payload = "data=" + URLEncoder.encode(query, StandardCharsets.UTF_8.toString());
                     try (OutputStreamWriter writer = new OutputStreamWriter(
@@ -229,7 +262,14 @@ public class MainActivity extends Activity {
             }
 
             if (last != null) throw last;
-            throw new RuntimeException("No Overpass response");
+            throw new RuntimeException("Нет ответа от сервера");
+        }
+
+        private String friendlyError(Exception e) {
+            if (e instanceof SocketTimeoutException) return "сервер не успел ответить";
+            String name = e.getClass().getSimpleName();
+            if (name == null || name.isEmpty()) return "ошибка сети";
+            return name;
         }
 
         private String readAll(InputStream stream) throws Exception {
