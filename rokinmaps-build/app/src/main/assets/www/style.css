@@ -60,3 +60,33 @@
 .boarding-stop-marker{width:34px;height:34px;border-radius:11px;background:#111a27;color:#6d7dff;border:2px solid #fff;display:grid;place-items:center;box-shadow:0 7px 18px rgba(0,0,0,.42),0 0 0 4px rgba(109,125,255,.2)}
 .boarding-stop-marker svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .nearby-transit-routes{display:flex!important;gap:7px!important;flex-wrap:wrap!important}
+
+
+/* Navigation mode */
+.navigation-ui{position:fixed;inset:0;z-index:60;pointer-events:none;padding:max(12px,env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom));display:flex;flex-direction:column;justify-content:space-between}
+.navigation-top,.navigation-bottom,.nav-recenter,.nav-rerouting{pointer-events:auto}
+.navigation-top{display:grid;grid-template-columns:68px minmax(0,1fr) 44px;gap:12px;align-items:center;background:rgba(12,18,29,.96);border:1px solid rgba(255,255,255,.1);border-radius:22px;padding:12px;box-shadow:0 22px 70px rgba(0,0,0,.4);backdrop-filter:blur(18px)}
+.nav-maneuver{width:68px;height:68px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(135deg,#6d7dff,#8c5cff);font-size:38px;font-weight:900;line-height:1;box-shadow:0 12px 30px rgba(109,125,255,.28)}
+.nav-instruction-wrap{min-width:0}.nav-next-distance{font-size:13px;color:#a9b5c7;font-weight:750;margin-bottom:2px}.nav-instruction{font-size:22px;font-weight:900;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nav-street{font-size:12px;color:#8f9bad;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-sound-btn{width:44px;height:44px;border:0;border-radius:14px;background:rgba(255,255,255,.07);font-size:20px}
+.nav-rerouting{position:absolute;top:112px;left:50%;transform:translateX(-50%);padding:8px 12px;border-radius:999px;background:#111a27;border:1px solid rgba(255,184,77,.35);color:#ffd28d;font-size:11px;font-weight:750;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.nav-recenter{position:absolute;right:14px;bottom:126px;width:48px;height:48px;border:0;border-radius:16px;background:#111a27;border:1px solid rgba(255,255,255,.09);font-size:22px;box-shadow:0 12px 30px rgba(0,0,0,.34)}
+.navigation-bottom{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:8px;align-items:center;background:rgba(12,18,29,.96);border:1px solid rgba(255,255,255,.1);border-radius:22px;padding:10px;box-shadow:0 22px 70px rgba(0,0,0,.42);backdrop-filter:blur(18px)}
+.nav-stat{min-width:0;padding:7px 8px;border-radius:14px;background:rgba(255,255,255,.035);text-align:center}.nav-stat strong{display:block;font-size:18px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nav-stat span{display:block;margin-top:2px;font-size:9px;color:#8490a3}
+.nav-exit-btn{border:0;border-radius:15px;background:#ff5f73;color:#fff;padding:12px 14px;font-weight:850}
+.nav-position-marker{width:42px;height:42px}.nav-position-core{width:42px;height:42px;border-radius:50%;background:#6d7dff;border:4px solid #fff;display:grid;place-items:center;box-shadow:0 8px 24px rgba(0,0,0,.42),0 0 0 5px rgba(109,125,255,.2)}.nav-position-arrow{font-size:20px;line-height:1;color:#fff;transform-origin:center}
+body.nav-active .shell{opacity:0;pointer-events:none}
+body.nav-active .attribution-pill{display:none}
+body.nav-active .maplibregl-canvas{transition:none!important}
+.navigation-ui.arrived .nav-maneuver{background:linear-gradient(135deg,#38c98b,#2fa4ff)}.navigation-ui.arrived .nav-instruction{color:#8ef0bd}
+@media(max-width:720px){
+ .navigation-ui{padding:max(8px,env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom))}
+ .navigation-top{grid-template-columns:58px minmax(0,1fr) 40px;border-radius:18px;padding:9px;gap:9px}
+ .nav-maneuver{width:58px;height:58px;border-radius:16px;font-size:32px}
+ .nav-instruction{font-size:18px}.nav-street{font-size:11px}.nav-sound-btn{width:40px;height:40px}
+ .navigation-bottom{grid-template-columns:repeat(4,minmax(0,1fr));border-radius:18px;padding:8px;gap:6px}
+ .nav-exit-btn{grid-column:1/-1;padding:10px}
+ .nav-stat{padding:6px 4px}.nav-stat strong{font-size:15px}.nav-stat span{font-size:8px}
+ .nav-recenter{right:10px;bottom:164px}
+ .nav-rerouting{top:90px}
+}
