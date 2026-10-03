@@ -1,4 +1,4 @@
-(()=>{'use strict';const $=id=>document.getElementById(id);const state={origin:null,destination:null,mode:'car',route:null,selectTarget:'destination',markers:{origin:null,destination:null},searchAbort:null};let map;
+(()=>{'use strict';const $=id=>document.getElementById(id);const state={origin:null,destination:null,mode:'car',route:null,selectTarget:'destination',markers:{origin:null,destination:null},searchAbort:null,cityContext:null,nearbyTransit:null,activeTransitRelation:null,transitStopMarkers:[]};let map;
 
 const TRANSPORT_TYPES=[
 {id:'bus',name:'Автобусы',group:'Городской транспорт',color:'#4da3ff',source:'GTFS-RT'},
@@ -31,6 +31,10 @@ let transportMoveTimer=null;
 let lastAircraftVehicles=[];
 let lastAircraftProvider='';
 let nearestHintShown=false;
+let liveRequestInFlight=false;
+let liveRequestStartedAt=0;
+let liveRequestLastAt=0;
+let liveRequestWatchdog=null;
 const transportMarkers=new Map();
 function transportIcon(id){
 const p={
