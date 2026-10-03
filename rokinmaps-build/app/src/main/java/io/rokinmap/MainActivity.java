@@ -164,6 +164,80 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void fetchSearchSuggestions(
+                String query,
+                double lat,
+                double lon,
+                String bbox,
+                String countryCode,
+                int requestId
+        ) {
+            new Thread(() -> {
+                HttpURLConnection connection = null;
+                try {
+                    StringBuilder endpoint = new StringBuilder(
+                            "https://photon.komoot.io/api/?q="
+                    );
+                    endpoint.append(URLEncoder.encode(
+                            query == null ? "" : query.trim(),
+                            StandardCharsets.UTF_8.toString()
+                    ));
+                    endpoint.append("&limit=8&lang=ru&zoom=13&location_bias_scale=0.15");
+
+                    if (Double.isFinite(lat) && Double.isFinite(lon)) {
+                        endpoint.append("&lat=").append(String.format(Locale.US, "%.6f", lat));
+                        endpoint.append("&lon=").append(String.format(Locale.US, "%.6f", lon));
+                    }
+                    if (bbox != null && !bbox.trim().isEmpty()) {
+                        endpoint.append("&bbox=").append(URLEncoder.encode(
+                                bbox.trim(),
+                                StandardCharsets.UTF_8.toString()
+                        ));
+                    }
+                    if (countryCode != null && !countryCode.trim().isEmpty()) {
+                        endpoint.append("&countrycode=").append(URLEncoder.encode(
+                                countryCode.trim().toUpperCase(Locale.ROOT),
+                                StandardCharsets.UTF_8.toString()
+                        ));
+                    }
+
+                    connection = (HttpURLConnection) new URL(endpoint.toString()).openConnection();
+                    connection.setRequestMethod("GET");
+                    connection.setConnectTimeout(6000);
+                    connection.setReadTimeout(8000);
+                    connection.setUseCaches(true);
+                    connection.setRequestProperty("Accept", "application/json");
+                    connection.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9");
+                    connection.setRequestProperty("User-Agent", "RokinMaps/0.2.13 Android");
+
+                    int code = connection.getResponseCode();
+                    InputStream stream = code >= 200 && code < 300
+                            ? connection.getInputStream()
+                            : connection.getErrorStream();
+                    String body = readAll(stream);
+
+                    if (code >= 200 && code < 300 && body != null && body.contains("{")) {
+                        emitTransportCallback("onSearchSuggestions", body, String.valueOf(requestId));
+                    } else {
+                        emitTransportCallback(
+                                "onSearchSuggestionsError",
+                                "поиск временно недоступен",
+                                String.valueOf(requestId)
+                        );
+                    }
+                } catch (Exception e) {
+                    emitTransportCallback(
+                            "onSearchSuggestionsError",
+                            friendlyError(e),
+                            String.valueOf(requestId)
+                    );
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
         public void fetchAircraft(double lat, double lon, int radiusNm) {
             final int radius = Math.max(40, Math.min(250, radiusNm));
             new Thread(() -> {
@@ -183,7 +257,7 @@ public class MainActivity extends Activity {
                         connection.setReadTimeout(11000);
                         connection.setUseCaches(false);
                         connection.setRequestProperty("Accept", "application/json");
-                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.12 Android");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.13 Android");
 
                         int code = connection.getResponseCode();
                         InputStream stream = code >= 200 && code < 300
@@ -639,7 +713,7 @@ public class MainActivity extends Activity {
                         "Content-Type",
                         "application/x-www-form-urlencoded; charset=UTF-8"
                 );
-                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.12 Android");
+                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.13 Android");
 
                 String payload = "data=" + URLEncoder.encode(
                         query,
