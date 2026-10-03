@@ -24,6 +24,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final int LOCATION_REQUEST = 42;
@@ -75,8 +76,8 @@ public class MainActivity extends Activity {
                 pendingGeoOrigin = origin;
                 pendingGeoCallback = callback;
                 requestPermissions(
-                    new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION},
-                    LOCATION_REQUEST
+                        new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION},
+                        LOCATION_REQUEST
                 );
             }
         });
@@ -105,38 +106,44 @@ public class MainActivity extends Activity {
     private class TransportBridge {
         @JavascriptInterface
         public void fetchAircraft(double lat, double lon, int radiusNm) {
-            final int radius = Math.max(10, Math.min(250, radiusNm));
+            final int radius = Math.max(40, Math.min(250, radiusNm));
             new Thread(() -> {
-                HttpURLConnection connection = null;
-                try {
-                    String endpoint = String.format(
-                            java.util.Locale.US,
-                            "https://api.adsb.lol/v2/point/%.5f/%.5f/%d",
-                            lat, lon, radius
-                    );
-                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                    connection.setRequestMethod("GET");
-                    connection.setConnectTimeout(10000);
-                    connection.setReadTimeout(12000);
-                    connection.setRequestProperty("Accept", "application/json");
-                    connection.setRequestProperty("User-Agent", "RokinMaps/0.2.5 (Android)");
+                String[] names = new String[]{"ADSB.lol", "Airplanes.live"};
+                String[] endpoints = new String[]{
+                        String.format(Locale.US, "https://api.adsb.lol/v2/point/%.5f/%.5f/%d", lat, lon, radius),
+                        String.format(Locale.US, "https://api.airplanes.live/v2/point/%.5f/%.5f/%d", lat, lon, radius)
+                };
 
-                    int code = connection.getResponseCode();
-                    InputStream stream = code >= 200 && code < 300
-                            ? connection.getInputStream()
-                            : connection.getErrorStream();
-                    String body = readAll(stream);
+                String lastError = "нет ответа";
+                for (int i = 0; i < endpoints.length; i++) {
+                    HttpURLConnection connection = null;
+                    try {
+                        connection = (HttpURLConnection) new URL(endpoints[i]).openConnection();
+                        connection.setRequestMethod("GET");
+                        connection.setConnectTimeout(9000);
+                        connection.setReadTimeout(12000);
+                        connection.setUseCaches(false);
+                        connection.setRequestProperty("Accept", "application/json");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.6 Android");
 
-                    if (code >= 200 && code < 300) {
-                        emitTransportCallback("onAircraft", body);
-                    } else {
-                        emitTransportCallback("onAircraftError", "HTTP " + code);
+                        int code = connection.getResponseCode();
+                        InputStream stream = code >= 200 && code < 300
+                                ? connection.getInputStream()
+                                : connection.getErrorStream();
+                        String body = readAll(stream);
+
+                        if (code >= 200 && code < 300 && body != null && body.contains("{")) {
+                            emitTransportCallback("onAircraft", body, names[i]);
+                            return;
+                        }
+                        lastError = names[i] + " HTTP " + code;
+                    } catch (Exception e) {
+                        lastError = names[i] + " " + e.getClass().getSimpleName();
+                    } finally {
+                        if (connection != null) connection.disconnect();
                     }
-                } catch (Exception e) {
-                    emitTransportCallback("onAircraftError", e.getClass().getSimpleName());
-                } finally {
-                    if (connection != null) connection.disconnect();
                 }
+                emitTransportCallback("onAircraftError", lastError, "");
             }).start();
         }
 
@@ -151,9 +158,12 @@ public class MainActivity extends Activity {
             return out.toString();
         }
 
-        private void emitTransportCallback(String method, String payload) {
+        private void emitTransportCallback(String method, String payload, String provider) {
             final String js = "window.RokinTransportNative&&window.RokinTransportNative."
-                    + method + "(" + JSONObject.quote(payload == null ? "" : payload) + ")";
+                    + method + "("
+                    + JSONObject.quote(payload == null ? "" : payload) + ","
+                    + JSONObject.quote(provider == null ? "" : provider)
+                    + ")";
             runOnUiThread(() -> {
                 if (webView != null) webView.evaluateJavascript(js, null);
             });
