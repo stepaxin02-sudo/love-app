@@ -5,6 +5,8 @@ import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import android.view.WindowManager;
 import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -43,6 +45,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private GeolocationPermissions.Callback pendingGeoCallback;
     private String pendingGeoOrigin;
+    private TextToSpeech textToSpeech;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,6 +57,14 @@ public class MainActivity extends Activity {
         final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
                 .build();
+
+        textToSpeech = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS && textToSpeech != null) {
+                textToSpeech.setLanguage(new Locale("ru", "RU"));
+                textToSpeech.setSpeechRate(1.0f);
+                textToSpeech.setPitch(1.0f);
+            }
+        });
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#0B0F17"));
@@ -116,6 +127,40 @@ public class MainActivity extends Activity {
     }
 
     private class TransportBridge {
+
+        @JavascriptInterface
+        public void setNavigationActive(boolean active) {
+            runOnUiThread(() -> {
+                if (active) {
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } else {
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void speak(String text) {
+            if (text == null || text.trim().isEmpty()) return;
+            runOnUiThread(() -> {
+                if (textToSpeech != null) {
+                    textToSpeech.speak(
+                            text,
+                            TextToSpeech.QUEUE_FLUSH,
+                            null,
+                            "rokin-nav-" + System.currentTimeMillis()
+                    );
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void stopSpeaking() {
+            runOnUiThread(() -> {
+                if (textToSpeech != null) textToSpeech.stop();
+            });
+        }
+
         @JavascriptInterface
         public void fetchAircraft(double lat, double lon, int radiusNm) {
             final int radius = Math.max(40, Math.min(250, radiusNm));
@@ -136,7 +181,7 @@ public class MainActivity extends Activity {
                         connection.setReadTimeout(11000);
                         connection.setUseCaches(false);
                         connection.setRequestProperty("Accept", "application/json");
-                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.10 Android");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.11 Android");
 
                         int code = connection.getResponseCode();
                         InputStream stream = code >= 200 && code < 300
@@ -575,6 +620,16 @@ public class MainActivity extends Activity {
                 if (webView != null) webView.evaluateJavascript(js, null);
             });
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+            textToSpeech = null;
+        }
+        super.onDestroy();
     }
 
     @Override
