@@ -16,7 +16,7 @@
     <section class="panel route-card" id="routeCard">
       <div class="brand-row">
         <div class="brand-mark">R</div>
-        <div><div class="brand">Rokin Maps</div><div class="caption"><span class="live-dot"></span> LIVE · v0.2.10</div></div>
+        <div><div class="brand">Rokin Maps</div><div class="caption"><span class="live-dot"></span> LIVE · v0.2.11</div></div>
         <button class="icon-btn mobile-only" id="collapseBtn" aria-label="Свернуть">⌄</button>
       </div>
       <div class="route-form">
@@ -86,6 +86,41 @@
       </div>
       <div class="transport-groups" id="transportGroups"></div>
       <div class="transport-note" id="transportNote">Включите нужные виды транспорта.</div>
+    </section>
+  </div>
+  <div class="navigation-ui hidden" id="navigationUi">
+    <section class="navigation-top">
+      <div class="nav-maneuver" id="navManeuverIcon">↑</div>
+      <div class="nav-instruction-wrap">
+        <div class="nav-next-distance" id="navNextDistance">—</div>
+        <div class="nav-instruction" id="navInstruction">Следуйте по маршруту</div>
+        <div class="nav-street" id="navStreet"></div>
+      </div>
+      <button class="nav-sound-btn" id="navSoundBtn" aria-label="Звук">🔊</button>
+    </section>
+
+    <div class="nav-rerouting hidden" id="navRerouting">Перестраиваю маршрут…</div>
+
+    <button class="nav-recenter hidden" id="navRecenterBtn" aria-label="Вернуться к позиции">◎</button>
+
+    <section class="navigation-bottom">
+      <div class="nav-stat">
+        <strong id="navEta">—</strong>
+        <span>прибытие</span>
+      </div>
+      <div class="nav-stat">
+        <strong id="navRemainingTime">—</strong>
+        <span>осталось</span>
+      </div>
+      <div class="nav-stat">
+        <strong id="navRemainingDistance">—</strong>
+        <span>расстояние</span>
+      </div>
+      <div class="nav-stat">
+        <strong id="navSpeed">0</strong>
+        <span>км/ч</span>
+      </div>
+      <button class="nav-exit-btn" id="navExitBtn">Завершить</button>
     </section>
   </div>
   <div class="toast hidden" id="toast"></div>
