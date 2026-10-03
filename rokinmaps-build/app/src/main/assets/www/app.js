@@ -219,8 +219,9 @@ function selectNearbyTransport(route,button){
  const stop=route.boardingStop||route.stops?.[0]||null;
  if(stop){
   highlightBoardingStop(stop);
-  const ref=route.ref||route.name||'';
-  toast((ref?('Маршрут '+ref+' · '):'')+'идти к остановке «'+(stop.name||'Остановка')+'» · '+Math.round(stop.distance)+' м',5000)
+  const ref=route.ref||route.name||'',msg=(ref?('Маршрут '+ref+' → '):'')+'остановка «'+(stop.name||'Остановка')+'» · '+Math.round(stop.distance)+' м';
+  const sub=$('nearbyTransitSub');if(sub)sub.textContent=msg;
+  toast(msg,5000)
  }
  showTransitRelation(route,button)
 }
