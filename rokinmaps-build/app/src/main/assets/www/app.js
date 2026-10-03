@@ -108,7 +108,7 @@ function aircraftError(message){liveRequestInFlight=false;clearTimeout(liveReque
 function countVisibleAircraft(){if(!map||!lastAircraftVehicles.length)return 0;const b=map.getBounds();return lastAircraftVehicles.filter(v=>b.contains([+v.lon,+v.lat])).length}
 function nearestAircraft(){if(!map||!lastAircraftVehicles.length)return null;const c=map.getCenter();return lastAircraftVehicles.reduce((best,v)=>{const d=haversineNm({lat:c.lat,lng:c.lng},{lat:+v.lat,lng:+v.lon});return !best||d<best.d?{v,d}:best},null)}
 function focusNearestAircraft(){const n=nearestAircraft();if(!n){toast('Live-транспорт пока не найден');return}closeTransport();map.easeTo({center:[+n.v.lon,+n.v.lat],zoom:9,duration:900});toast('Показан ближайший объект · '+Math.round(n.d)+' мор. миль',3000)}
-window.RokinTransportNative={onAircraft:consumeAircraftPayload,onAircraftError:aircraftError,onNearbyStops:consumeNearbyStopsPayload,onNearbyStopsError:nearbyStopsError,onDirectRoutes:consumeDirectRoutesPayload,onDirectRoutesError:directRoutesError,onRouteSchedule:consumeRouteSchedulePayload,onTransitRoute:consumeTransitRoutePayload,onTransitError:transitRouteError,onSearchSuggestions:consumeSearchSuggestions,onSearchSuggestionsError:searchSuggestionsError,onExactSearch:consumeExactSearch,onExactSearchError:exactSearchError};
+window.RokinTransportNative={onAircraft:consumeAircraftPayload,onAircraftError:aircraftError,onNearbyStops:consumeNearbyStopsPayload,onNearbyStopsError:nearbyStopsError,onPlannerStops:consumePlannerStopsPayload,onPlannerStopsError:plannerStopsError,onDirectRoutes:consumeDirectRoutesPayload,onDirectRoutesError:directRoutesError,onRouteSchedule:consumeRouteSchedulePayload,onTransitRoute:consumeTransitRoutePayload,onTransitError:transitRouteError,onSearchSuggestions:consumeSearchSuggestions,onSearchSuggestionsError:searchSuggestionsError,onExactSearch:consumeExactSearch,onExactSearchError:exactSearchError};
 function requestLiveAircraft(force=false){
  if(!map||document.hidden||(!transportEnabled('airplane')&&!transportEnabled('helicopter')))return;
  const now=Date.now();
@@ -272,6 +272,32 @@ async function resolveTransitOrigin(){
  if(!navigator.geolocation)return null;
  return await new Promise(resolve=>navigator.geolocation.getCurrentPosition(p=>resolve({lat:p.coords.latitude,lon:p.coords.longitude,display_name:'Моё местоположение'}),()=>resolve(null),{enableHighAccuracy:true,timeout:9000,maximumAge:15000}))
 }
+function requestPlannerStopsCombined(planner){
+ if(!planner||planner.token!==state.transitPlanner?.token)return;
+ nearbyWatchdog(planner.token,'stops');
+ if(window.RokinNative&&typeof window.RokinNative.fetchPlannerStops==='function'){
+  window.RokinNative.fetchPlannerStops(+planner.origin.lat,+planner.origin.lon,+planner.destination.lat,+planner.destination.lon,planner.token);return
+ }
+ requestPlannerStops(planner,'origin');requestPlannerStops(planner,'destination')
+}
+function consumePlannerStopsPayload(raw,requestId=''){
+ const token=Number(requestId),planner=state.transitPlanner;if(!planner||token!==planner.token)return;
+ clearTimeout(state.nearbyTransitTimer);
+ planner.originStops=parseStopsAround(raw,planner.origin,1500);
+ planner.destinationStops=parseStopsAround(raw,planner.destination,900);
+ planner.loadingStops=false;
+ if(!planner.originStops.length)return transitPlannerError(token,'Рядом с точкой отправления нет остановок в пределах 1,5 км');
+ if(!planner.destinationStops.length)return transitPlannerError(token,'У адреса назначения нет остановок в пределах 900 м');
+ requestDirectRoutes(planner)
+}
+function plannerStopsError(message,requestId=''){
+ const token=Number(requestId),planner=state.transitPlanner;if(!planner||token!==planner.token)return;
+ if(!planner.stopRetry){
+  planner.stopRetry=1;planner.error=null;planner.loadingStops=true;const sub=$('nearbyTransitSub');if(sub)sub.textContent='Повторяю поиск остановок…';
+  requestPlannerStops(planner,'origin');requestPlannerStops(planner,'destination');return
+ }
+ transitPlannerError(token,'Сервис остановок временно недоступен. Попробуйте ещё раз.')
+}
 function requestPlannerStops(planner,side){
  const isOrigin=side==='origin',point=isOrigin?planner.origin:planner.destination,radius=isOrigin?1500:900,requestId=planner.token*10+(isOrigin?1:2);
  nearbyWatchdog(planner.token,'stops');
@@ -292,7 +318,10 @@ function consumeNearbyStopsPayload(raw,requestId=''){
  }else renderNearbyTransit()
 }
 function nearbyStopsError(message,requestId=''){
- const id=Number(requestId),token=Math.floor(id/10);transitPlannerError(token,'Не удалось получить остановки: '+(message||'ошибка сети'))
+ const id=Number(requestId),token=Math.floor(id/10),planner=state.transitPlanner;if(!planner||token!==planner.token)return;
+ planner.stopFallbackErrors=(planner.stopFallbackErrors||0)+1;
+ if(planner.stopFallbackErrors<2)return;
+ transitPlannerError(token,'Сервис остановок временно недоступен. Попробуйте ещё раз.')
 }
 function requestDirectRoutes(planner){
  if(!planner||planner.token!==state.transitPlanner?.token)return;
@@ -356,10 +385,14 @@ function consumeRouteSchedulePayload(raw,requestId=''){
  for(const route of planner.routes||[])if(String(route.ref)===String(d.ref)&&String(route.type)===String(d.type))route.schedule={status:d.status||'not_found',from:d.from||'',to:d.to||'',source:d.source||''};
  renderNearbyTransit()
 }
+function cancelTransitPlanner(){
+ ++state.nearbyTransitToken;clearTimeout(state.nearbyTransitTimer);state.transitPlanner=null;clearNearbyStopMarkers();clearTransitOverlay();closeNearbyTransit()
+}
 async function loadNearbyTransitForPlace(p){
- if(!p)return;const token=++state.nearbyTransitToken,origin=await resolveTransitOrigin();if(token!==state.nearbyTransitToken)return;clearTimeout(state.nearbyTransitTimer);clearNearbyStopMarkers();clearTransitOverlay();
+ if(!p||state.mode!=='car'){cancelTransitPlanner();return}
+ const token=++state.nearbyTransitToken,origin=await resolveTransitOrigin();if(token!==state.nearbyTransitToken)return;clearTimeout(state.nearbyTransitTimer);clearNearbyStopMarkers();clearTransitOverlay();
  if(!origin){state.transitPlanner={token,origin:null,destination:p,originStops:[],destinationStops:[],routes:[],loadingStops:false,loadingRoutes:false,error:'Не удалось определить точку отправления'};renderNearbyTransit();return}
- const planner={token,origin,destination:{lat:+p.lat,lon:+p.lon,display_name:p.display_name||''},originStops:null,destinationStops:null,routes:[],loadingStops:true,loadingRoutes:false,error:null,directRetry:0};state.transitPlanner=planner;renderNearbyTransit();requestPlannerStops(planner,'origin');requestPlannerStops(planner,'destination')
+ const planner={token,origin,destination:{lat:+p.lat,lon:+p.lon,display_name:p.display_name||''},originStops:null,destinationStops:null,routes:[],loadingStops:true,loadingRoutes:false,error:null,directRetry:0,stopRetry:0,stopFallbackErrors:0};state.transitPlanner=planner;renderNearbyTransit();requestPlannerStopsCombined(planner)
 }
 
 function showTransitRelation(route,button){
