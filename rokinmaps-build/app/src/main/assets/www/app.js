@@ -529,18 +529,84 @@ function setHint(t){$('hintText').textContent=t}function safeName(p){return p?.d
 function initMap(){if(!window.maplibregl){toast('Не удалось загрузить движок карты');return}map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/liberty',center:[73.3686,54.9893],zoom:11,attributionControl:false,maxPitch:70});['dragstart','zoomstart','rotatestart','pitchstart'].forEach(evt=>map.on(evt,e=>{if(nav.active&&e.originalEvent)setNavFollow(false)}));map.on('load',()=>{map.addSource('route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});map.addLayer({id:'route-shadow',type:'line',source:'route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#0b1020','line-width':10,'line-opacity':.42}});map.addLayer({id:'route-line',type:'line',source:'route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#6d7dff','line-width':6}});map.addSource('transit-route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});map.addLayer({id:'transit-route-shadow',type:'line',source:'transit-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#101522','line-width':9,'line-opacity':.48}});map.addLayer({id:'transit-route-line',type:'line',source:'transit-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffb84d','line-width':5,'line-opacity':.95}});startLiveTransport()});map.on('click',e=>{if(!$('searchModal').classList.contains('hidden'))return;const p={lat:e.lngLat.lat,lon:e.lngLat.lng,display_name:e.lngLat.lat.toFixed(5)+', '+e.lngLat.lng.toFixed(5)};if(!state.origin)setPlace('origin',p);else if(!state.destination)setPlace('destination',p)})}
 function markerElement(kind){const e=document.createElement('div');e.className='marker-pin '+kind;return e}function setMarker(kind,p){if(state.markers[kind])state.markers[kind].remove();state.markers[kind]=new maplibregl.Marker({element:markerElement(kind),anchor:'bottom'}).setLngLat([+p.lon,+p.lat]).addTo(map)}
 function setPlace(kind,p){state[kind]=p;setMarker(kind,p);const t=$(kind+'Text');t.textContent=safeName(p);t.classList.remove('muted');if(kind==='destination'){map.easeTo({center:[+p.lon,+p.lat],zoom:14,duration:650});loadNearbyTransitForPlace(p)}else if(kind==='origin'&&state.destination){loadNearbyTransitForPlace(state.destination)}if(state.origin&&state.destination)buildRoute();else setHint('Теперь выберите '+(state.origin?'пункт назначения':'точку отправления'))}
-async function search(q){
- q=q.trim();if(q.length<2){$('searchState').textContent='Введите хотя бы 2 символа';return}
- if(state.searchAbort)state.searchAbort.abort();state.searchAbort=new AbortController();$('results').innerHTML='';setSearchContextUI();
- const ctx=state.cityContext,params=new URLSearchParams({format:'jsonv2',limit:'8',addressdetails:'1','accept-language':'ru'});
- let query=q;
- if(ctx?.city){query+=', '+ctx.city;if(ctx.region&&ctx.region!==ctx.city)query+=', '+ctx.region;$('searchState').textContent='Ищу в '+ctx.city+'…'}else $('searchState').textContent='Ищу…';
- params.set('q',query);
- if(ctx?.countryCode)params.set('countrycodes',ctx.countryCode);
- if(Array.isArray(ctx?.bbox)&&ctx.bbox.length===4){const [south,north,west,east]=ctx.bbox;params.set('viewbox',[west,north,east,south].join(','));params.set('bounded','1')}
- try{const r=await fetch('https://nominatim.openstreetmap.org/search?'+params.toString(),{headers:{Accept:'application/json'},signal:state.searchAbort.signal});if(!r.ok)throw new Error('HTTP '+r.status);const a=await r.json();$('searchState').textContent=a.length?('Найдено в '+(ctx?.city||'результатах')+': '+a.length):(ctx?.city?('В '+ctx.city+' ничего не найдено'):'Ничего не найдено');a.forEach(p=>{const b=document.createElement('button');b.className='result';const title=p.name||p.display_name.split(',')[0];b.innerHTML='<span class="result-icon">⌖</span><span><div class="result-title"></div><div class="result-sub"></div></span>';b.querySelector('.result-title').textContent=title;b.querySelector('.result-sub').textContent=p.display_name;b.onclick=()=>{setPlace(state.selectTarget,p);closeSearch()};$('results').appendChild(b)})}catch(e){if(e.name!=='AbortError')$('searchState').textContent='Ошибка поиска. Проверьте интернет.'}
+function loadSearchHistory(){
+ try{const v=JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY)||'[]');return Array.isArray(v)?v:[]}catch{return[]}
 }
-function openSearch(target){state.selectTarget=target;$('searchInput').value='';$('results').innerHTML='';setSearchContextUI();$('searchState').textContent=state.cityContext?.city?('Ищем только в '+state.cityContext.city):(target==='origin'?'Найдите точку отправления':'Найдите пункт назначения');$('searchModal').classList.remove('hidden');setTimeout(()=>$('searchInput').focus(),100)}function closeSearch(){$('searchModal').classList.add('hidden')}
+function saveSearchHistory(place){
+ if(!place||!Number.isFinite(+place.lat)||!Number.isFinite(+place.lon))return;
+ const item={name:place.name||'',display_name:place.display_name||safeName(place),lat:+place.lat,lon:+place.lon,kind:place.kind||'',city:place.city||'',ts:Date.now()};
+ const history=loadSearchHistory().filter(x=>String(x.display_name).toLowerCase()!==String(item.display_name).toLowerCase());
+ history.unshift(item);try{localStorage.setItem(SEARCH_HISTORY_KEY,JSON.stringify(history.slice(0,12)))}catch{}
+}
+function clearSearchHistory(){try{localStorage.removeItem(SEARCH_HISTORY_KEY)}catch{};renderSearchHistory()}
+function searchResultTitle(place){return place?.name||String(place?.display_name||'').split(',')[0]||'Место'}
+function selectSearchPlace(place){
+ saveSearchHistory(place);setPlace(state.selectTarget||'destination',place);closeSearch();setBottomActive('route')
+}
+function makeSearchResult(place,isHistory=false){
+ const b=document.createElement('button');b.className='result'+(isHistory?' history-result':'');
+ b.innerHTML='<span class="result-icon"></span><span><div class="result-title"></div><div class="result-sub"></div><div class="result-suggestion-badge"></div></span>';
+ b.querySelector('.result-icon').textContent=isHistory?'◴':'⌖';
+ b.querySelector('.result-title').textContent=searchResultTitle(place);
+ b.querySelector('.result-sub').textContent=place.display_name||'';
+ const badge=b.querySelector('.result-suggestion-badge');badge.textContent=isHistory?'Недавний поиск':(place.kind||'Адрес или место');
+ b.onclick=()=>selectSearchPlace(place);return b
+}
+function renderSearchPlaces(places){
+ const root=$('results');root.innerHTML='';$('historyClear').classList.add('hidden');
+ (places||[]).forEach(p=>root.appendChild(makeSearchResult(p,false)))
+}
+function renderSearchHistory(){
+ const root=$('results'),history=loadSearchHistory();root.innerHTML='';
+ $('historyClear').classList.toggle('hidden',history.length===0);
+ if(!history.length){$('searchState').textContent=state.cityContext?.city?('Поиск в '+state.cityContext.city+' · начните вводить адрес'):'Начните вводить адрес';return}
+ $('searchState').textContent='История поиска';
+ history.forEach(p=>root.appendChild(makeSearchResult(p,true)))
+}
+function photonFeatureToPlace(feature){
+ const props=feature?.properties||{},coords=feature?.geometry?.coordinates||[],lon=+coords[0],lat=+coords[1];if(!Number.isFinite(lat)||!Number.isFinite(lon))return null;
+ const street=props.street||'',house=props.housenumber||'',named=props.name||'',address=[street,house].filter(Boolean).join(' ');
+ const title=(address&&(!named||named===street))?address:(named||address||props.city||props.locality||'Место');
+ const parts=[title,props.district||props.locality||'',props.city||'',props.state||'',props.country||''].filter(Boolean);
+ const unique=[];for(const x of parts)if(!unique.some(y=>String(y).toLowerCase()===String(x).toLowerCase()))unique.push(x);
+ return{lat,lon,name:title,display_name:unique.join(', '),kind:props.type||props.osm_value||props.layer||'Место',city:props.city||'',photon:props}
+}
+function consumeSearchSuggestions(raw,requestId=''){
+ const id=Number(requestId);if(id!==searchSuggestActive)return;
+ let data;try{data=typeof raw==='string'?JSON.parse(raw):raw}catch{return searchSuggestionsError('неверный ответ',requestId)}
+ const places=(Array.isArray(data?.features)?data.features:[]).map(photonFeatureToPlace).filter(Boolean);
+ const q=$('searchInput').value.trim();searchSuggestionCache.set(q.toLowerCase(),places);
+ $('searchState').textContent=places.length?(state.cityContext?.city?('В '+state.cityContext.city+': '+places.length):('Найдено: '+places.length)):(state.cityContext?.city?('В '+state.cityContext.city+' ничего не найдено'):'Ничего не найдено');
+ renderSearchPlaces(places)
+}
+function searchSuggestionsError(message,requestId=''){
+ const id=Number(requestId);if(id!==searchSuggestActive)return;$('historyClear').classList.add('hidden');$('searchState').textContent='Поиск временно недоступен';$('results').innerHTML=''
+}
+function requestSearchSuggestions(q,immediate=false){
+ q=String(q||'').trim();clearTimeout(searchSuggestTimer);
+ if(!q){renderSearchHistory();return}
+ if(q.length<2){$('historyClear').classList.add('hidden');$('searchState').textContent='Введите ещё один символ';$('results').innerHTML='';return}
+ const key=q.toLowerCase(),cached=searchSuggestionCache.get(key);if(cached){$('searchState').textContent=state.cityContext?.city?('В '+state.cityContext.city+': '+cached.length):('Найдено: '+cached.length);renderSearchPlaces(cached);if(!immediate)return}
+ const run=()=>{
+  const id=++searchSuggestSeq;searchSuggestActive=id;setSearchContextUI();$('historyClear').classList.add('hidden');$('searchState').textContent=state.cityContext?.city?('Ищу в '+state.cityContext.city+'…'):'Ищу…';
+  const ctx=state.cityContext,center=ctx&&Number.isFinite(+ctx.lat)&&Number.isFinite(+ctx.lon)?{lat:+ctx.lat,lon:+ctx.lon}:(map?{lat:map.getCenter().lat,lon:map.getCenter().lng}:{lat:0,lon:0});
+  let bbox='';if(Array.isArray(ctx?.bbox)&&ctx.bbox.length===4){const [south,north,west,east]=ctx.bbox;bbox=[west,south,east,north].join(',')}
+  const country=ctx?.countryCode||'';
+  let query=q;if(ctx?.city&&!bbox&&!query.toLowerCase().includes(String(ctx.city).toLowerCase()))query+=', '+ctx.city;
+  if(window.RokinNative&&typeof window.RokinNative.fetchSearchSuggestions==='function'){window.RokinNative.fetchSearchSuggestions(query,center.lat,center.lon,bbox,country,id);return}
+  const params=new URLSearchParams({q:query,limit:'8',lang:'ru',zoom:'13',location_bias_scale:'0.15',lat:String(center.lat),lon:String(center.lon)});if(bbox)params.set('bbox',bbox);if(country)params.set('countrycode',country.toUpperCase());
+  fetch('https://photon.komoot.io/api/?'+params.toString()).then(r=>r.json()).then(x=>consumeSearchSuggestions(x,String(id))).catch(()=>searchSuggestionsError('сеть',String(id)))
+ };
+ if(immediate)run();else searchSuggestTimer=setTimeout(run,350)
+}
+function search(q){requestSearchSuggestions(q,true)}
+function openSearch(target='destination'){
+ state.selectTarget=target;state.searchMode='search';$('searchInput').value='';setSearchContextUI();$('searchModal').classList.remove('hidden');renderSearchHistory();setBottomActive('search');setTimeout(()=>$('searchInput').focus(),100)
+}
+function openHistory(){
+ state.selectTarget='destination';state.searchMode='history';$('searchInput').value='';setSearchContextUI();$('searchModal').classList.remove('hidden');renderSearchHistory();setBottomActive('history')
+}
+function closeSearch(){$('searchModal').classList.add('hidden')}
 function routeBase(){if(state.mode==='foot')return'https://routing.openstreetmap.de/routed-foot/route/v1/driving';if(state.mode==='bike')return'https://routing.openstreetmap.de/routed-bike/route/v1/driving';return'https://router.project-osrm.org/route/v1/driving'}
 async function buildRoute(){if(!state.origin||!state.destination||!map)return;setHint('Строю маршрут…');$('routeSummary').classList.add('hidden');const a=state.origin,b=state.destination,u=routeBase()+'/'+a.lon+','+a.lat+';'+b.lon+','+b.lat+'?overview=full&geometries=geojson&steps=true&alternatives=false';try{const r=await fetch(u);if(!r.ok)throw 0;const d=await r.json();if(d.code!=='Ok'||!d.routes?.length)throw 0;const route=d.routes[0];state.route=route;map.getSource('route')?.setData({type:'Feature',properties:{},geometry:route.geometry});const c=route.geometry.coordinates,bb=c.reduce((z,x)=>z.extend(x),new maplibregl.LngLatBounds(c[0],c[0]));map.fitBounds(bb,{padding:innerWidth<720?{top:320,bottom:95,left:40,right:40}:90,duration:750,maxZoom:16});$('durationText').textContent=formatDuration(route.duration);$('distanceText').textContent=formatDistance(route.distance);$('routeSummary').classList.remove('hidden');setHint('Маршрут готов')}catch(e){clearRouteLine();setHint('Маршрут не построен');toast('Не удалось построить маршрут')}}
 function formatDuration(s){const m=Math.max(1,Math.round(s/60));if(m<60)return m+' мин';const h=Math.floor(m/60),r=m%60;return r?h+' ч '+r+' мин':h+' ч'}function formatDistance(m){return m<1000?Math.round(m)+' м':(m/1000).toFixed(m<10000?1:0)+' км'}function clearRouteLine(){map?.getSource('route')?.setData({type:'FeatureCollection',features:[]});$('routeSummary').classList.add('hidden')}
