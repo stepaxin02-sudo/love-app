@@ -148,8 +148,17 @@ async function resolveCityContext(lat,lon){
  }catch(e){return null}
 }
 function distanceM(a,b){const R=6371000,toRad=x=>x*Math.PI/180,dLat=toRad(+b.lat-+a.lat),dLon=toRad(+b.lon-+a.lon),la1=toRad(+a.lat),la2=toRad(+b.lat);const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+function normalizeTransitType(tags={}){
+ const raw=String(tags.route||'').toLowerCase();
+ const text=[tags.name,tags.ref,tags.operator,tags.network,tags.description,tags.bus,tags.service].filter(Boolean).join(' ').toLowerCase();
+ if(raw==='share_taxi'||tags.share_taxi==='yes'||/маршрут(ка|ное такси)|minibus|shuttle/.test(text))return'share_taxi';
+ if(raw==='trolleybus')return'trolleybus';
+ if(raw==='tram')return'tram';
+ return'bus'
+}
 function transitTypeLabel(type){return({bus:'Автобус',trolleybus:'Троллейбус',tram:'Трамвай',share_taxi:'Маршрутка'})[type]||'Маршрут'}
 function transitTypeIcon(type){return({bus:'bus',trolleybus:'trolleybus',tram:'tram',share_taxi:'minibus'})[type]||'bus'}
+function transitTypeClass(type){return({bus:'bus',trolleybus:'trolleybus',tram:'tram',share_taxi:'minibus'})[type]||'bus'}
 function closeNearbyTransit(){$('nearbyTransit')?.classList.add('hidden')}
 function clearTransitOverlay(){
  const src=map?.getSource('transit-route');if(src)src.setData({type:'FeatureCollection',features:[]});
@@ -197,7 +206,7 @@ function renderNearbyTransit(){
    for(const route of stop.routes.slice(0,14)){
     const b=document.createElement('button');b.className='nearby-route';b.dataset.relation=String(route.id);
     const schedule=route.schedule||{};
-    b.innerHTML='<span class="nearby-route-icon"></span><span class="nearby-route-text"><span class="nearby-route-num"></span><span class="nearby-route-type"></span><span class="nearby-route-hours"></span><span class="nearby-route-source"></span></span>';
+    b.innerHTML='<span class="nearby-route-icon"></span><span class="nearby-route-text"><span class="nearby-route-num"></span><span class="nearby-route-type"></span><span class="nearby-route-hours"></span><span class="nearby-route-source"></span></span>';b.classList.add('transport-'+transitTypeClass(route.type));
     b.querySelector('.nearby-route-icon').innerHTML=transportIcon(transitTypeIcon(route.type));
     b.querySelector('.nearby-route-num').textContent=route.ref||route.name||'—';
     b.querySelector('.nearby-route-type').textContent=transitTypeLabel(route.type);
@@ -316,7 +325,7 @@ function consumeRoutesNearStopPayload(raw,requestId=''){
  const byKey=new Map();
  for(const rel of Array.isArray(data?.elements)?data.elements:[]){
   if(rel.type!=='relation'||rel.tags?.type!=='route')continue;
-  const tags=rel.tags||{},type=tags.route||'';if(!['bus','trolleybus','tram','share_taxi'].includes(type))continue;
+  const tags=rel.tags||{},rawType=tags.route||'';if(!['bus','trolleybus','tram','share_taxi'].includes(rawType))continue;const type=normalizeTransitType(tags);
   const ref=tags.ref||tags.name||String(rel.id),key=type+'|'+ref;
   const sched=parseRouteHours(tags);
   const interval=String(tags.interval||tags['interval:conditional']||'').match(/\d+/)?.[0]||'';
