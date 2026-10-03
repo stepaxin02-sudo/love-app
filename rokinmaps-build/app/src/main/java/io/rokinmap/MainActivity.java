@@ -82,6 +82,8 @@ public class MainActivity extends Activity {
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setUserAgentString(settings.getUserAgentString() + " RokinMaps/0.2.15");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -242,7 +244,7 @@ public class MainActivity extends Activity {
                         connection.setUseCaches(true);
                         connection.setRequestProperty("Accept", "application/json");
                         connection.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9,en;q=0.6");
-                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.14 Android");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.15 Android");
 
                         int code = connection.getResponseCode();
                         InputStream stream = code >= 200 && code < 300
@@ -321,7 +323,7 @@ public class MainActivity extends Activity {
                     connection.setUseCaches(false);
                     connection.setRequestProperty("Accept", "application/json");
                     connection.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9");
-                    connection.setRequestProperty("User-Agent", "RokinMaps/0.2.14 Android");
+                    connection.setRequestProperty("User-Agent", "RokinMaps/0.2.15 Android");
 
                     int code = connection.getResponseCode();
                     InputStream stream = code >= 200 && code < 300
@@ -374,7 +376,7 @@ public class MainActivity extends Activity {
                         connection.setReadTimeout(11000);
                         connection.setUseCaches(false);
                         connection.setRequestProperty("Accept", "application/json");
-                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.14 Android");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.15 Android");
 
                         int code = connection.getResponseCode();
                         InputStream stream = code >= 200 && code < 300
@@ -394,6 +396,45 @@ public class MainActivity extends Activity {
                     }
                 }
                 emitTransportCallback("onAircraftError", lastError, "");
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void fetchPlannerStops(
+                double originLat,
+                double originLon,
+                double destinationLat,
+                double destinationLon,
+                int requestId
+        ) {
+            new Thread(() -> {
+                String query = String.format(
+                        Locale.US,
+                        "[out:json][timeout:8];("
+                                + "node(around:1500,%.6f,%.6f)[\"highway\"=\"bus_stop\"];"
+                                + "node(around:1500,%.6f,%.6f)[\"public_transport\"=\"platform\"];"
+                                + "node(around:900,%.6f,%.6f)[\"highway\"=\"bus_stop\"];"
+                                + "node(around:900,%.6f,%.6f)[\"public_transport\"=\"platform\"];"
+                                + ");out tags 240;",
+                        originLat, originLon,
+                        originLat, originLon,
+                        destinationLat, destinationLon,
+                        destinationLat, destinationLon
+                );
+                try {
+                    String body = requestOverpass(query, 5500, 9000);
+                    emitTransportCallback(
+                            "onPlannerStops",
+                            body,
+                            String.valueOf(requestId)
+                    );
+                } catch (Exception e) {
+                    emitTransportCallback(
+                            "onPlannerStopsError",
+                            friendlyError(e),
+                            String.valueOf(requestId)
+                    );
+                }
             }).start();
         }
 
@@ -830,7 +871,7 @@ public class MainActivity extends Activity {
                         "Content-Type",
                         "application/x-www-form-urlencoded; charset=UTF-8"
                 );
-                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.14 Android");
+                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.15 Android");
 
                 String payload = "data=" + URLEncoder.encode(
                         query,
