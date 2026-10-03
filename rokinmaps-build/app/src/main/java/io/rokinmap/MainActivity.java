@@ -338,6 +338,70 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void fetchDirectRoutes(String originStopsJson, String destinationStopsJson, int requestId) {
+            new Thread(() -> {
+                try {
+                    JSONArray originStops = new JSONArray(originStopsJson == null ? "[]" : originStopsJson);
+                    JSONArray destinationStops = new JSONArray(destinationStopsJson == null ? "[]" : destinationStopsJson);
+
+                    StringBuilder nodes = new StringBuilder();
+                    StringBuilder ways = new StringBuilder();
+                    StringBuilder relations = new StringBuilder();
+                    java.util.HashSet<String> seen = new java.util.HashSet<>();
+
+                    JSONArray[] groups = new JSONArray[]{originStops, destinationStops};
+                    for (JSONArray group : groups) {
+                        int addedForGroup = 0;
+                        for (int i = 0; i < group.length() && addedForGroup < 80; i++) {
+                            JSONObject stop = group.optJSONObject(i);
+                            if (stop == null) continue;
+                            long id = stop.optLong("id", 0);
+                            String type = stop.optString("type", "node");
+                            if (id <= 0) continue;
+                            String key = type + ":" + id;
+                            if (!seen.add(key)) continue;
+
+                            if ("way".equals(type)) ways.append("way(").append(id).append(");");
+                            else if ("relation".equals(type)) relations.append("relation(").append(id).append(");");
+                            else nodes.append("node(").append(id).append(");");
+                            addedForGroup++;
+                        }
+                    }
+
+                    if (seen.isEmpty()) {
+                        emitTransportCallback("onDirectRoutes", "{\"elements\":[]}", String.valueOf(requestId));
+                        return;
+                    }
+
+                    StringBuilder query = new StringBuilder("[out:json][timeout:18];");
+                    if (nodes.length() > 0) query.append("(").append(nodes).append(")->.n;");
+                    if (ways.length() > 0) query.append("(").append(ways).append(")->.w;");
+                    if (relations.length() > 0) query.append("(").append(relations).append(")->.r;");
+                    query.append("(");
+                    if (nodes.length() > 0) {
+                        query.append("rel(bn.n)[\"type\"=\"route\"][\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"];");
+                    }
+                    if (ways.length() > 0) {
+                        query.append("rel(bw.w)[\"type\"=\"route\"][\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"];");
+                    }
+                    if (relations.length() > 0) {
+                        query.append("rel(br.r)[\"type\"=\"route\"][\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"];");
+                    }
+                    query.append(");out body 500;");
+
+                    String body = requestOverpass(query.toString(), 7000, 15000);
+                    emitTransportCallback("onDirectRoutes", body, String.valueOf(requestId));
+                } catch (Exception e) {
+                    emitTransportCallback(
+                            "onDirectRoutesError",
+                            friendlyError(e),
+                            String.valueOf(requestId)
+                    );
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
         public void fetchRouteSchedule(String city, String routeType, String routeRef, int requestId) {
             new Thread(() -> {
                 JSONObject result = new JSONObject();
