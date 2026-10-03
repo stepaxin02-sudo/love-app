@@ -10,8 +10,8 @@ android {
         applicationId = "app.rokin.maps.beta"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.2.10"
+        versionCode = 12
+        versionName = "0.2.11"
     }
 
     signingConfigs {
