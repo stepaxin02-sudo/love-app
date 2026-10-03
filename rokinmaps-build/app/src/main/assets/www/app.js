@@ -4,6 +4,8 @@ const SEARCH_HISTORY_KEY='rokin.search.history.v1';
 let searchSuggestTimer=null;
 let searchSuggestSeq=0;
 let searchSuggestActive=0;
+let exactSearchSeq=0;
+let exactSearchActive=0;
 const searchSuggestionCache=new Map();
 
 
@@ -106,7 +108,7 @@ function aircraftError(message){liveRequestInFlight=false;clearTimeout(liveReque
 function countVisibleAircraft(){if(!map||!lastAircraftVehicles.length)return 0;const b=map.getBounds();return lastAircraftVehicles.filter(v=>b.contains([+v.lon,+v.lat])).length}
 function nearestAircraft(){if(!map||!lastAircraftVehicles.length)return null;const c=map.getCenter();return lastAircraftVehicles.reduce((best,v)=>{const d=haversineNm({lat:c.lat,lng:c.lng},{lat:+v.lat,lng:+v.lon});return !best||d<best.d?{v,d}:best},null)}
 function focusNearestAircraft(){const n=nearestAircraft();if(!n){toast('Live-транспорт пока не найден');return}closeTransport();map.easeTo({center:[+n.v.lon,+n.v.lat],zoom:9,duration:900});toast('Показан ближайший объект · '+Math.round(n.d)+' мор. миль',3000)}
-window.RokinTransportNative={onAircraft:consumeAircraftPayload,onAircraftError:aircraftError,onNearbyStops:consumeNearbyStopsPayload,onNearbyStopsError:nearbyStopsError,onDirectRoutes:consumeDirectRoutesPayload,onDirectRoutesError:directRoutesError,onRouteSchedule:consumeRouteSchedulePayload,onTransitRoute:consumeTransitRoutePayload,onTransitError:transitRouteError,onSearchSuggestions:consumeSearchSuggestions,onSearchSuggestionsError:searchSuggestionsError};
+window.RokinTransportNative={onAircraft:consumeAircraftPayload,onAircraftError:aircraftError,onNearbyStops:consumeNearbyStopsPayload,onNearbyStopsError:nearbyStopsError,onDirectRoutes:consumeDirectRoutesPayload,onDirectRoutesError:directRoutesError,onRouteSchedule:consumeRouteSchedulePayload,onTransitRoute:consumeTransitRoutePayload,onTransitError:transitRouteError,onSearchSuggestions:consumeSearchSuggestions,onSearchSuggestionsError:searchSuggestionsError,onExactSearch:consumeExactSearch,onExactSearchError:exactSearchError};
 function requestLiveAircraft(force=false){
  if(!map||document.hidden||(!transportEnabled('airplane')&&!transportEnabled('helicopter')))return;
  const now=Date.now();
@@ -580,7 +582,9 @@ function consumeSearchSuggestions(raw,requestId=''){
  renderSearchPlaces(places)
 }
 function searchSuggestionsError(message,requestId=''){
- const id=Number(requestId);if(id!==searchSuggestActive)return;$('historyClear').classList.add('hidden');$('searchState').textContent='Поиск временно недоступен';$('results').innerHTML=''
+ const id=Number(requestId);if(id!==searchSuggestActive)return;
+ $('historyClear').classList.add('hidden');
+ $('searchState').textContent='Подсказки временно недоступны — нажмите «Найти»';
 }
 function requestSearchSuggestions(q,immediate=false){
  q=String(q||'').trim();clearTimeout(searchSuggestTimer);
@@ -599,7 +603,29 @@ function requestSearchSuggestions(q,immediate=false){
  };
  if(immediate)run();else searchSuggestTimer=setTimeout(run,350)
 }
-function search(q){requestSearchSuggestions(q,true)}
+function nominatimPlaceToLocal(p){
+ if(!p)return null;const lat=+p.lat,lon=+p.lon;if(!Number.isFinite(lat)||!Number.isFinite(lon))return null;
+ return{lat,lon,name:p.name||String(p.display_name||'').split(',')[0]||'Место',display_name:p.display_name||p.name||'Место',kind:p.type||p.class||'Адрес',city:p.address?.city||p.address?.town||p.address?.village||''}
+}
+function consumeExactSearch(raw,requestId=''){
+ const id=Number(requestId);if(id!==exactSearchActive)return;
+ let data;try{data=typeof raw==='string'?JSON.parse(raw):raw}catch{return exactSearchError('неверный ответ',requestId)}
+ const places=(Array.isArray(data)?data:[]).map(nominatimPlaceToLocal).filter(Boolean);
+ $('searchState').textContent=places.length?(state.cityContext?.city?('Найдено в '+state.cityContext.city+': '+places.length):('Найдено: '+places.length)):'Ничего не найдено';
+ renderSearchPlaces(places)
+}
+function exactSearchError(message,requestId=''){
+ const id=Number(requestId);if(id!==exactSearchActive)return;$('searchState').textContent='Не удалось выполнить точный поиск. Попробуйте ещё раз.'
+}
+function search(q){
+ q=String(q||'').trim();if(q.length<2){$('searchState').textContent='Введите хотя бы 2 символа';return}
+ const id=++exactSearchSeq;exactSearchActive=id;$('historyClear').classList.add('hidden');$('searchState').textContent=state.cityContext?.city?('Ищу в '+state.cityContext.city+'…'):'Ищу…';
+ const ctx=state.cityContext,city=ctx?.city||'',country=ctx?.countryCode||'';
+ if(window.RokinNative&&typeof window.RokinNative.fetchExactSearch==='function'){window.RokinNative.fetchExactSearch(q,city,country,id);return}
+ let query=q;if(city&&!query.toLowerCase().includes(city.toLowerCase()))query+=', '+city;
+ const params=new URLSearchParams({format:'jsonv2',limit:'8',addressdetails:'1','accept-language':'ru',q:query});if(country)params.set('countrycodes',country);
+ fetch('https://nominatim.openstreetmap.org/search?'+params.toString()).then(r=>r.json()).then(x=>consumeExactSearch(x,String(id))).catch(()=>exactSearchError('сеть',String(id)))
+}
 function openSearch(target='destination'){
  state.selectTarget=target;state.searchMode='search';$('searchInput').value='';setSearchContextUI();$('searchModal').classList.remove('hidden');renderSearchHistory();setBottomActive('search');setTimeout(()=>$('searchInput').focus(),100)
 }
@@ -622,4 +648,4 @@ function openRoutePanel(){
  if(!state.origin&&!state.destination)toast('Укажите точки «Откуда» и «Куда»',2200)
 }
 function openTransportFromBottom(){closeSearch();openTransport();setBottomActive('transport')}
-$('originBtn').onclick=()=>openSearch('origin');$('destinationBtn').onclick=()=>openSearch('destination');$('closeNearbyTransit').onclick=()=>{closeNearbyTransit();clearTransitOverlay();clearNearbyStopMarkers()};$('closeSearch').onclick=()=>{closeSearch();setBottomActive('route')};$('searchModal').onclick=e=>{if(e.target===$('searchModal')){closeSearch();setBottomActive('route')}};$('searchSubmit').onclick=()=>search($('searchInput').value);$('searchInput').oninput=e=>requestSearchSuggestions(e.currentTarget.value,false);$('searchInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();search(e.currentTarget.value)}};$('historyClear').onclick=()=>{clearSearchHistory();toast('История поиска очищена',1800)};$('locateBtn').onclick=locate;$('centerBtn').onclick=locate;$('swapBtn').onclick=swap;$('clearBtn').onclick=reset;$('zoomInBtn').onclick=()=>map?.zoomIn();$('zoomOutBtn').onclick=()=>map?.zoomOut();$('collapseBtn').onclick=()=>{const c=$('routeCard');c.classList.toggle('compact');$('collapseBtn').textContent=c.classList.contains('compact')?'⌃':'⌄'};document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{document.querySelectorAll('.mode').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.mode=b.dataset.mode;if(state.origin&&state.destination)buildRoute()});$('transportBtn').onclick=openTransportFromBottom;$('closeTransport').onclick=()=>{closeTransport();setBottomActive('route')};$('transportModal').onclick=e=>{if(e.target===$('transportModal')){closeTransport();setBottomActive('route')}};$('bottomSearchBtn').onclick=()=>openSearch('destination');$('bottomRouteBtn').onclick=openRoutePanel;$('bottomTransportBtn').onclick=openTransportFromBottom;$('bottomHistoryBtn').onclick=openHistory;$('startBtn').onclick=startNavigation;$('navExitBtn').onclick=stopNavigation;$('navSoundBtn').onclick=toggleNavSound;$('navRecenterBtn').onclick=()=>{setNavFollow(true);if(nav.lastPos)navigationCamera(nav.lastPos.lat,nav.lastPos.lon,nav.lastBearing,0)};window.RokinNavigationStop=stopNavigation;renderTransportPanel();setBottomActive('route');initMap()})();
+$('originBtn').onclick=()=>openSearch('origin');$('destinationBtn').onclick=()=>openSearch('destination');$('closeNearbyTransit').onclick=()=>{closeNearbyTransit();clearTransitOverlay();clearNearbyStopMarkers()};$('closeSearch').onclick=()=>{closeSearch();setBottomActive('route')};$('searchModal').onclick=e=>{if(e.target===$('searchModal')){closeSearch();setBottomActive('route')}};$('searchSubmit').onclick=()=>search($('searchInput').value);$('searchInput').oninput=e=>requestSearchSuggestions(e.currentTarget.value,false);$('searchInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();search(e.currentTarget.value)}};$('historyClear').onclick=()=>{clearSearchHistory();toast('История поиска очищена',1800)};$('locateBtn').onclick=locate;$('centerBtn').onclick=locate;$('swapBtn').onclick=swap;$('clearBtn').onclick=reset;$('zoomInBtn').onclick=()=>map?.zoomIn();$('zoomOutBtn').onclick=()=>map?.zoomOut();document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{document.querySelectorAll('.mode').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.mode=b.dataset.mode;if(state.origin&&state.destination)buildRoute()});$('transportBtn').onclick=openTransportFromBottom;$('closeTransport').onclick=()=>{closeTransport();setBottomActive('route')};$('transportModal').onclick=e=>{if(e.target===$('transportModal')){closeTransport();setBottomActive('route')}};$('bottomSearchBtn').onclick=()=>openSearch('destination');$('bottomRouteBtn').onclick=openRoutePanel;$('bottomTransportBtn').onclick=openTransportFromBottom;$('bottomHistoryBtn').onclick=openHistory;$('startBtn').onclick=startNavigation;$('navExitBtn').onclick=stopNavigation;$('navSoundBtn').onclick=toggleNavSound;$('navRecenterBtn').onclick=()=>{setNavFollow(true);if(nav.lastPos)navigationCamera(nav.lastPos.lat,nav.lastPos.lon,nav.lastBearing,0)};window.RokinNavigationStop=stopNavigation;renderTransportPanel();setBottomActive('route');initMap()})();
