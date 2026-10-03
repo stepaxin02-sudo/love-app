@@ -706,14 +706,58 @@ async function buildRoute(){if(!state.origin||!state.destination||!map)return;se
 function formatDuration(s){const m=Math.max(1,Math.round(s/60));if(m<60)return m+' мин';const h=Math.floor(m/60),r=m%60;return r?h+' ч '+r+' мин':h+' ч'}function formatDistance(m){return m<1000?Math.round(m)+' м':(m/1000).toFixed(m<10000?1:0)+' км'}function clearRouteLine(){map?.getSource('route')?.setData({type:'FeatureCollection',features:[]});$('routeSummary').classList.add('hidden')}
 function locate(){if(!navigator.geolocation){toast('Геолокация недоступна');return}setHint('Определяю местоположение…');navigator.geolocation.getCurrentPosition(async pos=>{const p={lat:pos.coords.latitude,lon:pos.coords.longitude,display_name:'Моё местоположение'};setPlace('origin',p);map.easeTo({center:[p.lon,p.lat],zoom:15,duration:700});const ctx=await resolveCityContext(p.lat,p.lon);setHint(state.destination?'Строю маршрут…':(ctx?.city?'Местоположение: '+ctx.city:'Местоположение определено'));if(ctx?.city)toast('Поиск теперь ограничен городом '+ctx.city,3000)},err=>{setHint('Не удалось определить местоположение');if(err.code===1)toast('Разрешите Rokin Maps доступ к местоположению',4500);else toast('Включите геолокацию на телефоне и попробуйте ещё раз',4000)},{enableHighAccuracy:true,timeout:15000,maximumAge:10000})}
 function reset(){if(nav.active||nav.completed)stopNavigation();['origin','destination'].forEach(k=>{state[k]=null;if(state.markers[k]){state.markers[k].remove();state.markers[k]=null}const e=$(k+'Text');e.textContent=k==='origin'?'Выберите точку':'Куда едем?';e.classList.add('muted')});state.route=null;state.nearbyTransit=null;state.transitPlanner=null;clearRouteLine();clearTransitOverlay();clearNearbyStopMarkers();closeNearbyTransit();setHint('Укажите начало и конец маршрута')}function swap(){const a=state.origin,b=state.destination;if(!a&&!b)return;if(state.markers.origin){state.markers.origin.remove();state.markers.origin=null}if(state.markers.destination){state.markers.destination.remove();state.markers.destination=null}state.origin=b;state.destination=a;['origin','destination'].forEach(k=>{const p=state[k],e=$(k+'Text');if(p){e.textContent=safeName(p);e.classList.remove('muted');setMarker(k,p)}else{e.textContent=k==='origin'?'Выберите точку':'Куда едем?';e.classList.add('muted')}});if(state.origin&&state.destination){buildRoute();loadNearbyTransitForPlace(state.destination)}else clearRouteLine()}
+const sheetState={snap:'mid',dragging:false,startY:0,startHeight:0};
+function sheetSnapHeights(){
+ const vh=window.visualViewport?.height||innerHeight;
+ return{min:110,mid:Math.max(260,Math.min(430,vh*.46)),max:Math.max(380,vh*.88)}
+}
+function applySheetHeight(height,animate=true){
+ const sheet=$('mapSheet');if(!sheet)return;
+ sheet.classList.toggle('dragging',!animate);
+ const h=sheetSnapHeights(),clamped=Math.max(h.min,Math.min(h.max,height));
+ sheet.style.height=clamped+'px'
+}
+function setSheetSnap(name='mid',animate=true){
+ const h=sheetSnapHeights(),key=['min','mid','max'].includes(name)?name:'mid';sheetState.snap=key;
+ $('mapSheet')?.setAttribute('data-snap',key);applySheetHeight(h[key],animate)
+}
+function initSheetDrag(){
+ const zone=$('sheetDragZone'),sheet=$('mapSheet');if(!zone||!sheet)return;
+ zone.addEventListener('pointerdown',e=>{sheetState.dragging=true;sheetState.startY=e.clientY;sheetState.startHeight=sheet.getBoundingClientRect().height;sheet.setPointerCapture?.(e.pointerId);sheet.classList.add('dragging');e.preventDefault()});
+ zone.addEventListener('pointermove',e=>{if(!sheetState.dragging)return;applySheetHeight(sheetState.startHeight+(sheetState.startY-e.clientY),false);e.preventDefault()});
+ const finish=e=>{if(!sheetState.dragging)return;sheetState.dragging=false;sheet.classList.remove('dragging');const cur=sheet.getBoundingClientRect().height,h=sheetSnapHeights(),choices=['min','mid','max'].map(k=>({k,d:Math.abs(cur-h[k])})).sort((a,b)=>a.d-b.d);setSheetSnap(choices[0].k,true);try{sheet.releasePointerCapture?.(e.pointerId)}catch{}};
+ zone.addEventListener('pointerup',finish);zone.addEventListener('pointercancel',finish);
+ window.addEventListener('resize',()=>setSheetSnap(sheetState.snap,false))
+}
 function setBottomActive(tab){
- const map={search:'bottomSearchBtn',route:'bottomRouteBtn',transport:'bottomTransportBtn',history:'bottomHistoryBtn'};
+ const ids={search:'bottomSearchBtn',route:'bottomRouteBtn',transport:'bottomTransportBtn',history:'bottomHistoryBtn'};
  document.querySelectorAll('.bottom-nav-item').forEach(x=>x.classList.remove('active'));
- const id=map[tab];if(id)$(id)?.classList.add('active')
+ const id=ids[tab];if(id)$(id)?.classList.add('active')
 }
 function openRoutePanel(){
- closeSearch();closeTransport();$('routeCard')?.classList.remove('compact');setBottomActive('route');
+ showSheetPanel('route');setBottomActive('route');
  if(!state.origin&&!state.destination)toast('Укажите точки «Откуда» и «Куда»',2200)
 }
-function openTransportFromBottom(){closeSearch();openTransport();setBottomActive('transport')}
-$('originBtn').onclick=()=>openSearch('origin');$('destinationBtn').onclick=()=>openSearch('destination');$('closeNearbyTransit').onclick=()=>{closeNearbyTransit();clearTransitOverlay();clearNearbyStopMarkers()};$('closeSearch').onclick=()=>{closeSearch();setBottomActive('route')};$('searchModal').onclick=e=>{if(e.target===$('searchModal')){closeSearch();setBottomActive('route')}};$('searchSubmit').onclick=()=>search($('searchInput').value);$('searchInput').oninput=e=>requestSearchSuggestions(e.currentTarget.value,false);$('searchInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();search(e.currentTarget.value)}};$('historyClear').onclick=()=>{clearSearchHistory();toast('История поиска очищена',1800)};$('locateBtn').onclick=locate;$('centerBtn').onclick=locate;$('swapBtn').onclick=swap;$('clearBtn').onclick=reset;$('zoomInBtn').onclick=()=>map?.zoomIn();$('zoomOutBtn').onclick=()=>map?.zoomOut();document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{document.querySelectorAll('.mode').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.mode=b.dataset.mode;if(state.origin&&state.destination)buildRoute()});$('transportBtn').onclick=openTransportFromBottom;$('closeTransport').onclick=()=>{closeTransport();setBottomActive('route')};$('transportModal').onclick=e=>{if(e.target===$('transportModal')){closeTransport();setBottomActive('route')}};$('bottomSearchBtn').onclick=()=>openSearch('destination');$('bottomRouteBtn').onclick=openRoutePanel;$('bottomTransportBtn').onclick=openTransportFromBottom;$('bottomHistoryBtn').onclick=openHistory;$('startBtn').onclick=startNavigation;$('navExitBtn').onclick=stopNavigation;$('navSoundBtn').onclick=toggleNavSound;$('navRecenterBtn').onclick=()=>{setNavFollow(true);if(nav.lastPos)navigationCamera(nav.lastPos.lat,nav.lastPos.lon,nav.lastBearing,0)};window.RokinNavigationStop=stopNavigation;renderTransportPanel();setBottomActive('route');initMap()})();
+function openTransportFromBottom(){openTransport();setBottomActive('transport')}
+function handleModeChange(button){
+ document.querySelectorAll('.mode').forEach(x=>x.classList.remove('active'));button.classList.add('active');state.mode=button.dataset.mode;
+ if(state.mode==='car'){if(state.destination)loadNearbyTransitForPlace(state.destination)}
+ else cancelTransitPlanner();
+ if(state.origin&&state.destination)buildRoute()
+}
+$('originBtn').onclick=()=>openSearch('origin');
+$('destinationBtn').onclick=()=>openSearch('destination');
+$('closeNearbyTransit').onclick=()=>{closeNearbyTransit();clearTransitOverlay();clearNearbyStopMarkers()};
+$('closeSearch').onclick=openRoutePanel;
+$('searchSubmit').onclick=()=>search($('searchInput').value);
+$('searchInput').oninput=e=>requestSearchSuggestions(e.currentTarget.value,false);
+$('searchInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();search(e.currentTarget.value)}};
+$('historyClear').onclick=()=>{clearSearchHistory();toast('История поиска очищена',1800)};
+$('locateBtn').onclick=locate;$('centerBtn').onclick=locate;$('swapBtn').onclick=swap;$('clearBtn').onclick=reset;
+$('zoomInBtn').onclick=()=>map?.zoomIn();$('zoomOutBtn').onclick=()=>map?.zoomOut();
+document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>handleModeChange(b));
+$('transportBtn').onclick=openTransportFromBottom;$('closeTransport').onclick=openRoutePanel;
+$('bottomSearchBtn').onclick=()=>openSearch('destination');$('bottomRouteBtn').onclick=openRoutePanel;$('bottomTransportBtn').onclick=openTransportFromBottom;$('bottomHistoryBtn').onclick=openHistory;
+$('startBtn').onclick=startNavigation;$('navExitBtn').onclick=stopNavigation;$('navSoundBtn').onclick=toggleNavSound;$('navRecenterBtn').onclick=()=>{setNavFollow(true);if(nav.lastPos)navigationCamera(nav.lastPos.lat,nav.lastPos.lon,nav.lastBearing,0)};
+window.RokinNavigationStop=stopNavigation;
+renderTransportPanel();initSheetDrag();showSheetPanel('route');setBottomActive('route');setSheetSnap('mid',false);initMap()})();
