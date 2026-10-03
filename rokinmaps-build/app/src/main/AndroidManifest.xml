@@ -12,7 +12,7 @@
         android:usesCleartextTraffic="false"
         android:icon="@drawable/rokin_icon"
         android:roundIcon="@drawable/rokin_icon"
-        android:label="Rokin Maps Live"
+        android:label="Rokin Maps"
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true">
         <activity
