@@ -28,6 +28,14 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     private static final int LOCATION_REQUEST = 42;
@@ -203,6 +211,142 @@ public class MainActivity extends Activity {
             }).start();
         }
 
+
+        @JavascriptInterface
+        public void fetchRouteSchedule(String city, String routeType, String routeRef, int requestId) {
+            new Thread(() -> {
+                JSONObject result = new JSONObject();
+                try {
+                    result.put("requestId", requestId);
+                    result.put("city", city == null ? "" : city);
+                    result.put("type", routeType == null ? "" : routeType);
+                    result.put("ref", routeRef == null ? "" : routeRef);
+
+                    String normalizedCity = city == null ? "" : city.trim().toLowerCase(Locale.ROOT);
+                    String ref = routeRef == null ? "" : routeRef.trim();
+                    if (!normalizedCity.contains("омск") || ref.isEmpty()) {
+                        result.put("status", "unavailable");
+                        emitTransportCallback("onRouteSchedule", result.toString(), String.valueOf(requestId));
+                        return;
+                    }
+
+                    String slug = transliterateRouteRef(ref);
+                    String[] urls;
+                    if ("tram".equals(routeType)) {
+                        urls = new String[]{"https://avtobus24.ru/omsk-tramvaj-" + slug + "/"};
+                    } else if ("trolleybus".equals(routeType)) {
+                        urls = new String[]{"https://avtobus24.ru/omsk-trollejbus-" + slug + "/"};
+                    } else if ("share_taxi".equals(routeType)) {
+                        urls = new String[]{
+                                "https://avtobus24.ru/omsk-marshrutka-" + slug + "/",
+                                "https://avtobus24.ru/omsk-avtobus-" + slug + "/"
+                        };
+                    } else {
+                        urls = new String[]{"https://avtobus24.ru/omsk-avtobus-" + slug + "/"};
+                    }
+
+                    Pattern hoursPattern = Pattern.compile(
+                            "Часы\\s*работы\\s*:?\\s*с\\s*(\\d{1,2}:\\d{2})\\s*до\\s*(\\d{1,2}:\\d{2})",
+                            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
+                    );
+
+                    for (String url : urls) {
+                        String html = fetchText(url, 6500, 9000);
+                        if (html == null || html.isEmpty()) continue;
+                        String text = html
+                                .replaceAll("(?is)<script[^>]*>.*?</script>", " ")
+                                .replaceAll("(?is)<style[^>]*>.*?</style>", " ")
+                                .replaceAll("(?is)<[^>]+>", " ")
+                                .replace("&nbsp;", " ")
+                                .replace("&#160;", " ")
+                                .replaceAll("\\s+", " ");
+                        Matcher matcher = hoursPattern.matcher(text);
+                        if (matcher.find()) {
+                            result.put("from", matcher.group(1));
+                            result.put("to", matcher.group(2));
+                            result.put("source", "avtobus24.ru");
+                            result.put("status", "ok");
+                            emitTransportCallback("onRouteSchedule", result.toString(), String.valueOf(requestId));
+                            return;
+                        }
+                    }
+
+                    result.put("status", "not_found");
+                    emitTransportCallback("onRouteSchedule", result.toString(), String.valueOf(requestId));
+                } catch (Exception e) {
+                    try {
+                        result.put("status", "error");
+                        result.put("error", friendlyError(e));
+                    } catch (Exception ignored) {}
+                    emitTransportCallback("onRouteSchedule", result.toString(), String.valueOf(requestId));
+                }
+            }).start();
+        }
+
+        private String transliterateRouteRef(String value) {
+            String upper = value.toUpperCase(Locale.ROOT);
+            StringBuilder out = new StringBuilder();
+            for (int i = 0; i < upper.length(); i++) {
+                char ch = upper.charAt(i);
+                if (ch >= '0' && ch <= '9') {
+                    out.append(ch);
+                    continue;
+                }
+                switch (ch) {
+                    case 'А': out.append('a'); break;
+                    case 'Б': out.append('b'); break;
+                    case 'В': out.append('v'); break;
+                    case 'Г': out.append('g'); break;
+                    case 'Д': out.append('d'); break;
+                    case 'Е': case 'Ё': out.append('e'); break;
+                    case 'Ж': out.append("zh"); break;
+                    case 'З': out.append('z'); break;
+                    case 'И': case 'Й': out.append('i'); break;
+                    case 'К': out.append('k'); break;
+                    case 'Л': out.append('l'); break;
+                    case 'М': out.append('m'); break;
+                    case 'Н': out.append('n'); break;
+                    case 'О': out.append('o'); break;
+                    case 'П': out.append('p'); break;
+                    case 'Р': out.append('r'); break;
+                    case 'С': out.append('s'); break;
+                    case 'Т': out.append('t'); break;
+                    case 'У': out.append('u'); break;
+                    case 'Ф': out.append('f'); break;
+                    case 'Х': out.append('h'); break;
+                    case 'Ц': out.append('c'); break;
+                    case 'Ч': out.append("ch"); break;
+                    case 'Ш': case 'Щ': out.append("sh"); break;
+                    case 'Ы': out.append('y'); break;
+                    case 'Э': out.append('e'); break;
+                    case 'Ю': out.append("yu"); break;
+                    case 'Я': out.append("ya"); break;
+                    default:
+                        if ((ch >= 'A' && ch <= 'Z') || ch == '-') out.append(Character.toLowerCase(ch));
+                }
+            }
+            return out.toString();
+        }
+
+        private String fetchText(String url, int connectTimeoutMs, int readTimeoutMs) throws Exception {
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(url).openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(connectTimeoutMs);
+                connection.setReadTimeout(readTimeoutMs);
+                connection.setUseCaches(true);
+                connection.setRequestProperty("Accept", "text/html,application/xhtml+xml");
+                connection.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9");
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 RokinMaps/0.2.8");
+                int code = connection.getResponseCode();
+                if (code < 200 || code >= 300) return "";
+                return readAll(connection.getInputStream());
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }
+
         @JavascriptInterface
         public void fetchTransitRoute(long relationId) {
             if (relationId <= 0) return;
@@ -223,46 +367,80 @@ public class MainActivity extends Activity {
                     "https://overpass.kumi.systems/api/interpreter",
                     "https://overpass.private.coffee/api/interpreter"
             };
-            Exception last = null;
 
+            ExecutorService executor = Executors.newFixedThreadPool(endpoints.length);
+            CompletionService<String> completion = new ExecutorCompletionService<>(executor);
             for (String endpoint : endpoints) {
-                HttpURLConnection connection = null;
-                try {
-                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                    connection.setRequestMethod("POST");
-                    connection.setConnectTimeout(connectTimeoutMs);
-                    connection.setReadTimeout(readTimeoutMs);
-                    connection.setUseCaches(false);
-                    connection.setDoOutput(true);
-                    connection.setRequestProperty("Accept", "application/json");
-                    connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-                    connection.setRequestProperty("User-Agent", "RokinMaps/0.2.8 Android");
+                completion.submit(() -> requestOverpassEndpoint(
+                        endpoint, query, connectTimeoutMs, readTimeoutMs
+                ));
+            }
 
-                    String payload = "data=" + URLEncoder.encode(query, StandardCharsets.UTF_8.toString());
-                    try (OutputStreamWriter writer = new OutputStreamWriter(
-                            connection.getOutputStream(), StandardCharsets.UTF_8)) {
-                        writer.write(payload);
+            long deadline = System.currentTimeMillis() + Math.max(9000, readTimeoutMs + 2500L);
+            Exception last = null;
+            try {
+                for (int i = 0; i < endpoints.length; i++) {
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0) break;
+                    Future<String> future = completion.poll(remaining, TimeUnit.MILLISECONDS);
+                    if (future == null) break;
+                    try {
+                        String body = future.get();
+                        if (body != null && body.contains("{")) return body;
+                    } catch (Exception e) {
+                        last = e;
                     }
-
-                    int code = connection.getResponseCode();
-                    InputStream stream = code >= 200 && code < 300
-                            ? connection.getInputStream()
-                            : connection.getErrorStream();
-                    String body = readAll(stream);
-
-                    if (code >= 200 && code < 300 && body != null && body.contains("{")) {
-                        return body;
-                    }
-                    last = new RuntimeException("HTTP " + code);
-                } catch (Exception e) {
-                    last = e;
-                } finally {
-                    if (connection != null) connection.disconnect();
                 }
+            } finally {
+                executor.shutdownNow();
             }
 
             if (last != null) throw last;
-            throw new RuntimeException("Нет ответа от сервера");
+            throw new SocketTimeoutException("Overpass timeout");
+        }
+
+        private String requestOverpassEndpoint(
+                String endpoint,
+                String query,
+                int connectTimeoutMs,
+                int readTimeoutMs
+        ) throws Exception {
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(connectTimeoutMs);
+                connection.setReadTimeout(readTimeoutMs);
+                connection.setUseCaches(false);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty(
+                        "Content-Type",
+                        "application/x-www-form-urlencoded; charset=UTF-8"
+                );
+                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.8 Android");
+
+                String payload = "data=" + URLEncoder.encode(
+                        query,
+                        StandardCharsets.UTF_8.toString()
+                );
+                try (OutputStreamWriter writer = new OutputStreamWriter(
+                        connection.getOutputStream(), StandardCharsets.UTF_8)) {
+                    writer.write(payload);
+                }
+
+                int code = connection.getResponseCode();
+                InputStream stream = code >= 200 && code < 300
+                        ? connection.getInputStream()
+                        : connection.getErrorStream();
+                String body = readAll(stream);
+                if (code >= 200 && code < 300 && body != null && body.contains("{")) {
+                    return body;
+                }
+                throw new RuntimeException("HTTP " + code);
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
         }
 
         private String friendlyError(Exception e) {
