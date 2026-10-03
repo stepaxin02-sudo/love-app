@@ -16,7 +16,7 @@
     <section class="panel route-card" id="routeCard">
       <div class="brand-row">
         <div class="brand-mark">R</div>
-        <div><div class="brand">Rokin Maps</div><div class="caption">Маршруты без лишнего</div></div>
+        <div><div class="brand">Rokin Maps</div><div class="caption"><span class="live-dot"></span> LIVE · v0.2.6</div></div>
         <button class="icon-btn mobile-only" id="collapseBtn" aria-label="Свернуть">⌄</button>
       </div>
       <div class="route-form">
@@ -45,7 +45,7 @@
     </section>
     <section class="quick panel">
       <button id="centerBtn"><span>◎</span><small>Где я</small></button>
-      <button id="transportBtn" class="transport-quick"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v10A2.5 2.5 0 0 1 17.5 18H17v2h-2v-2H9v2H7v-2h-.5A2.5 2.5 0 0 1 4 15.5v-10Zm2 0V10h12V5.5a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5Zm0 6.5v3.5c0 .28.22.5.5.5h11a.5.5 0 0 0 .5-.5V12H6Zm2 1h2v2H8v-2Zm6 0h2v2h-2v-2Z"/></svg></span><small>Транспорт</small></button>
+      <button id="transportBtn" class="transport-quick"><span class="transport-btn-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v10A2.5 2.5 0 0 1 17.5 18H17v2h-2v-2H9v2H7v-2h-.5A2.5 2.5 0 0 1 4 15.5v-10Zm2 0V10h12V5.5a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5Zm0 6.5v3.5c0 .28.22.5.5.5h11a.5.5 0 0 0 .5-.5V12H6Zm2 1h2v2H8v-2Zm6 0h2v2h-2v-2Z"/></svg><b id="transportCountBadge" class="transport-count hidden">0</b></span><small>Транспорт</small></button>
       <button id="zoomInBtn"><span>＋</span><small>Ближе</small></button>
       <button id="zoomOutBtn"><span>−</span><small>Дальше</small></button>
       <button id="clearBtn"><span>×</span><small>Сброс</small></button>
@@ -69,7 +69,7 @@
       <div class="transport-head">
         <div>
           <div class="transport-title">Транспорт на карте</div>
-          <div class="transport-sub">Каждый вид — со своей иконкой и отдельным слоем</div>
+          <div class="transport-sub" id="transportStatus">Получаю live-данные…</div>
         </div>
         <button class="transport-close" id="closeTransport" aria-label="Закрыть">×</button>
       </div>
