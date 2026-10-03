@@ -46,6 +46,7 @@ public class MainActivity extends Activity {
     private GeolocationPermissions.Callback pendingGeoCallback;
     private String pendingGeoOrigin;
     private TextToSpeech textToSpeech;
+    private boolean navigationActive = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -130,6 +131,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void setNavigationActive(boolean active) {
+            navigationActive = active;
             runOnUiThread(() -> {
                 if (active) {
                     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -698,6 +700,13 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (navigationActive && webView != null) {
+            webView.evaluateJavascript(
+                    "window.RokinNavigationStop&&window.RokinNavigationStop()",
+                    null
+            );
+            return;
+        }
         if (webView != null && webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
     }
