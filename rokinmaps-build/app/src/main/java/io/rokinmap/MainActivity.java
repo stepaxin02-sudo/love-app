@@ -17,6 +17,7 @@ import android.webkit.WebViewClient;
 import androidx.webkit.WebViewAssetLoader;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -135,7 +136,7 @@ public class MainActivity extends Activity {
                         connection.setReadTimeout(11000);
                         connection.setUseCaches(false);
                         connection.setRequestProperty("Accept", "application/json");
-                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.9 Android");
+                        connection.setRequestProperty("User-Agent", "RokinMaps/0.2.10 Android");
 
                         int code = connection.getResponseCode();
                         InputStream stream = code >= 200 && code < 300
@@ -235,6 +236,61 @@ public class MainActivity extends Activity {
             }).start();
         }
 
+
+        @JavascriptInterface
+        public void fetchRoutesForStops(String stopsJson, int requestId) {
+            new Thread(() -> {
+                try {
+                    JSONArray stops = new JSONArray(stopsJson == null ? "[]" : stopsJson);
+                    StringBuilder nodes = new StringBuilder();
+                    StringBuilder ways = new StringBuilder();
+                    StringBuilder relations = new StringBuilder();
+
+                    int added = 0;
+                    for (int i = 0; i < stops.length() && added < 80; i++) {
+                        JSONObject stop = stops.optJSONObject(i);
+                        if (stop == null) continue;
+                        long id = stop.optLong("id", 0);
+                        String type = stop.optString("type", "node");
+                        if (id <= 0) continue;
+                        if ("way".equals(type)) ways.append("way(").append(id).append(");");
+                        else if ("relation".equals(type)) relations.append("relation(").append(id).append(");");
+                        else nodes.append("node(").append(id).append(");");
+                        added++;
+                    }
+
+                    if (added == 0) {
+                        emitTransportCallback("onRoutesForStops", "{\"elements\":[]}", String.valueOf(requestId));
+                        return;
+                    }
+
+                    StringBuilder query = new StringBuilder("[out:json][timeout:15];");
+                    if (nodes.length() > 0) query.append("(").append(nodes).append(")->.n;");
+                    if (ways.length() > 0) query.append("(").append(ways).append(")->.w;");
+                    if (relations.length() > 0) query.append("(").append(relations).append(")->.r;");
+                    query.append("(");
+                    if (nodes.length() > 0) {
+                        query.append("rel(bn.n)[\"type\"=\"route\"][\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"];");
+                    }
+                    if (ways.length() > 0) {
+                        query.append("rel(bw.w)[\"type\"=\"route\"][\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"];");
+                    }
+                    if (relations.length() > 0) {
+                        query.append("rel(br.r)[\"type\"=\"route\"][\"route\"~\"^(bus|trolleybus|tram|share_taxi)$\"];");
+                    }
+                    query.append(");out body 300;");
+
+                    String body = requestOverpass(query.toString(), 7000, 13000);
+                    emitTransportCallback("onRoutesForStops", body, String.valueOf(requestId));
+                } catch (Exception e) {
+                    emitTransportCallback(
+                            "onRoutesForStopsError",
+                            friendlyError(e),
+                            String.valueOf(requestId)
+                    );
+                }
+            }).start();
+        }
 
         @JavascriptInterface
         public void fetchRouteSchedule(String city, String routeType, String routeRef, int requestId) {
@@ -386,7 +442,7 @@ public class MainActivity extends Activity {
                 connection.setUseCaches(true);
                 connection.setRequestProperty("Accept", "text/html,application/xhtml+xml");
                 connection.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9");
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 RokinMaps/0.2.9");
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 RokinMaps/0.2.10");
                 int code = connection.getResponseCode();
                 if (code < 200 || code >= 300) return "";
                 return readAll(connection.getInputStream());
@@ -466,7 +522,7 @@ public class MainActivity extends Activity {
                         "Content-Type",
                         "application/x-www-form-urlencoded; charset=UTF-8"
                 );
-                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.9 Android");
+                connection.setRequestProperty("User-Agent", "RokinMaps/0.2.10 Android");
 
                 String payload = "data=" + URLEncoder.encode(
                         query,
