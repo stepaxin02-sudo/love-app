@@ -90,3 +90,6 @@ body.nav-active .maplibregl-canvas{transition:none!important}
  .nav-recenter{right:10px;bottom:164px}
  .nav-rerouting{top:90px}
 }
+
+
+.alighting-stop-marker{width:34px;height:34px;border-radius:11px;background:#ff5f73;color:#fff;border:2px solid #fff;display:grid;place-items:center;font-size:16px;font-weight:900;box-shadow:0 7px 18px rgba(0,0,0,.42),0 0 0 4px rgba(255,95,115,.18)}
