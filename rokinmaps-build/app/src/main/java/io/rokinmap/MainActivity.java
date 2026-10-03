@@ -168,7 +168,7 @@ public class MainActivity extends Activity {
                                 + "node(around:%d,%.6f,%.6f)[\"highway\"=\"bus_stop\"];"
                                 + "nwr(around:%d,%.6f,%.6f)[\"public_transport\"=\"platform\"];"
                                 + "nwr(around:%d,%.6f,%.6f)[\"public_transport\"=\"station\"][\"bus\"=\"yes\"];"
-                                + ");out tags center 80;",
+                                + ");out tags center 200;",
                         radius, lat, lon,
                         radius, lat, lon,
                         radius, lat, lon
