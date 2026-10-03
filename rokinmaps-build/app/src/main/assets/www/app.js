@@ -289,8 +289,9 @@ function nearbyStopsError(message,requestId=''){
 function requestDirectRoutes(planner){
  if(!planner||planner.token!==state.transitPlanner?.token)return;
  planner.loadingRoutes=true;renderNearbyTransit();nearbyWatchdog(planner.token,'routes');
- const originPayload=JSON.stringify(planner.originStops.slice(0,32).map(s=>({type:s.osmType||'node',id:Number(s.id||0)})));
- const destPayload=JSON.stringify(planner.destinationStops.slice(0,24).map(s=>({type:s.osmType||'node',id:Number(s.id||0)})));
+ const retry=Number(planner.directRetry||0),originLimit=retry?16:32,destLimit=retry?12:24;
+ const originPayload=JSON.stringify(planner.originStops.slice(0,originLimit).map(s=>({type:s.osmType||'node',id:Number(s.id||0)})));
+ const destPayload=JSON.stringify(planner.destinationStops.slice(0,destLimit).map(s=>({type:s.osmType||'node',id:Number(s.id||0)})));
  if(window.RokinNative&&typeof window.RokinNative.fetchDirectRoutes==='function'){window.RokinNative.fetchDirectRoutes(originPayload,destPayload,planner.token);return}
  transitPlannerError(planner.token,'Поиск прямых маршрутов недоступен в этой сборке')
 }
@@ -323,7 +324,11 @@ function consumeDirectRoutesPayload(raw,requestId=''){
  planner.routes=[...byKey.values()].sort((a,b)=>a.boardingStop.distance-b.boardingStop.distance||a.alightingStop.distance-b.alightingStop.distance||String(a.ref).localeCompare(String(b.ref),'ru',{numeric:true}));
  planner.loadingRoutes=false;renderNearbyTransit();requestRouteSchedules(token,planner.routes)
 }
-function directRoutesError(message,requestId=''){const text=String(message||'сервер маршрутов временно недоступен');transitPlannerError(Number(requestId),'Не удалось найти прямой транспорт: '+text)}
+function directRoutesError(message,requestId=''){
+ const token=Number(requestId),planner=state.transitPlanner;if(!planner||token!==planner.token)return;
+ if(!planner.directRetry){planner.directRetry=1;planner.error=null;planner.loadingRoutes=true;const sub=$('nearbyTransitSub');if(sub)sub.textContent='Сервис ответил медленно — повторяю поиск…';requestDirectRoutes(planner);return}
+ const text=String(message||'сервер маршрутов временно недоступен');transitPlannerError(token,'Не удалось найти прямой транспорт: '+text)
+}
 function transitPlannerError(token,message){
  const p=state.transitPlanner;if(!p||token!==p.token)return;clearTimeout(state.nearbyTransitTimer);p.loadingStops=false;p.loadingRoutes=false;p.error=message;p.routes=[];renderNearbyTransit()
 }
@@ -346,7 +351,7 @@ function consumeRouteSchedulePayload(raw,requestId=''){
 async function loadNearbyTransitForPlace(p){
  if(!p)return;const token=++state.nearbyTransitToken,origin=await resolveTransitOrigin();if(token!==state.nearbyTransitToken)return;clearTimeout(state.nearbyTransitTimer);clearNearbyStopMarkers();clearTransitOverlay();
  if(!origin){state.transitPlanner={token,origin:null,destination:p,originStops:[],destinationStops:[],routes:[],loadingStops:false,loadingRoutes:false,error:'Не удалось определить точку отправления'};renderNearbyTransit();return}
- const planner={token,origin,destination:{lat:+p.lat,lon:+p.lon,display_name:p.display_name||''},originStops:null,destinationStops:null,routes:[],loadingStops:true,loadingRoutes:false,error:null};state.transitPlanner=planner;renderNearbyTransit();requestPlannerStops(planner,'origin');requestPlannerStops(planner,'destination')
+ const planner={token,origin,destination:{lat:+p.lat,lon:+p.lon,display_name:p.display_name||''},originStops:null,destinationStops:null,routes:[],loadingStops:true,loadingRoutes:false,error:null,directRetry:0};state.transitPlanner=planner;renderNearbyTransit();requestPlannerStops(planner,'origin');requestPlannerStops(planner,'destination')
 }
 
 function showTransitRelation(route,button){
