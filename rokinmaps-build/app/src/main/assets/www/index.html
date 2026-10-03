@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
-  <meta name="theme-color" content="#0b0f17" />
+  <meta name="theme-color" content="#eaf2f4" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Rokin Maps</title>
   <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css'" />
@@ -12,98 +12,126 @@
 <body>
   <div id="map"></div>
   <div class="ambient"></div>
-  <main class="shell">
-    <section class="panel route-card" id="routeCard">
-      <div class="route-form">
-        <div class="route-line">
-          <span class="dot origin-dot"></span>
-          <button class="place-field" id="originBtn"><span class="field-label">Откуда</span><span class="field-value muted" id="originText">Выберите точку</span></button>
-          <button class="mini-btn" id="locateBtn" title="Моё местоположение">⌖</button>
-        </div>
-        <div class="route-divider"></div>
-        <div class="route-line">
-          <span class="dot destination-dot"></span>
-          <button class="place-field" id="destinationBtn"><span class="field-label">Куда</span><span class="field-value muted" id="destinationText">Куда едем?</span></button>
-          <button class="mini-btn" id="swapBtn" title="Поменять местами">⇅</button>
-        </div>
-      </div>
-      <div class="modes" role="tablist">
-        <button class="mode active" data-mode="car">🚗 <span>Авто</span></button>
-        <button class="mode" data-mode="foot">🚶 <span>Пешком</span></button>
-        <button class="mode" data-mode="bike">🚲 <span>Велосипед</span></button>
-      </div>
-      <div class="route-summary hidden" id="routeSummary">
-        <div><div class="summary-main" id="durationText">—</div><div class="summary-sub" id="distanceText">—</div></div>
-        <button class="start-btn" id="startBtn">Начать</button>
-      </div>
-      <div class="hint" id="hintText">Укажите начало и конец маршрута</div>
-      <section class="nearby-transit hidden" id="nearbyTransit">
-        <div class="nearby-transit-head">
-          <div>
-            <div class="nearby-transit-title">Транспорт до адреса</div>
-            <div class="nearby-transit-sub" id="nearbyTransitSub">Ищу ближайшую остановку…</div>
+  <div class="attribution-pill">© OpenStreetMap · OpenFreeMap</div>
+
+  <section class="map-sheet" id="mapSheet" data-snap="mid">
+    <div class="sheet-drag-zone" id="sheetDragZone" aria-label="Потянуть панель">
+      <div class="sheet-handle always"></div>
+    </div>
+
+    <div class="sheet-scroll" id="sheetScroll">
+      <section class="sheet-panel" id="routePanel">
+        <div class="route-card" id="routeCard">
+          <div class="route-form">
+            <div class="route-line">
+              <span class="dot origin-dot"></span>
+              <button class="place-field" id="originBtn">
+                <span class="field-label">Откуда</span>
+                <span class="field-value muted" id="originText">Выберите точку</span>
+              </button>
+              <button class="mini-btn" id="locateBtn" title="Моё местоположение">⌖</button>
+            </div>
+            <div class="route-divider"></div>
+            <div class="route-line">
+              <span class="dot destination-dot"></span>
+              <button class="place-field" id="destinationBtn">
+                <span class="field-label">Куда</span>
+                <span class="field-value muted" id="destinationText">Куда едем?</span>
+              </button>
+              <button class="mini-btn" id="swapBtn" title="Поменять местами">⇅</button>
+            </div>
           </div>
-          <button class="nearby-transit-close" id="closeNearbyTransit">×</button>
+
+          <div class="modes" role="tablist">
+            <button class="mode active" data-mode="car">🚗 <span>Авто</span></button>
+            <button class="mode" data-mode="foot">🚶 <span>Пешком</span></button>
+            <button class="mode" data-mode="bike">🚲 <span>Велосипед</span></button>
+          </div>
+
+          <div class="route-summary hidden" id="routeSummary">
+            <div>
+              <div class="summary-main" id="durationText">—</div>
+              <div class="summary-sub" id="distanceText">—</div>
+            </div>
+            <button class="start-btn" id="startBtn">Начать</button>
+          </div>
+
+          <div class="sheet-tools">
+            <button id="centerBtn"><span>◎</span><small>Где я</small></button>
+            <button id="transportBtn" class="transport-quick">
+              <span class="transport-btn-icon">▣<b id="transportCountBadge" class="transport-count hidden">0</b></span>
+              <small>Транспорт</small>
+            </button>
+            <button id="zoomInBtn"><span>＋</span><small>Ближе</small></button>
+            <button id="zoomOutBtn"><span>−</span><small>Дальше</small></button>
+            <button id="clearBtn"><span>×</span><small>Сброс</small></button>
+          </div>
+
+          <div class="hint" id="hintText">Укажите начало и конец маршрута</div>
+
+          <section class="nearby-transit hidden" id="nearbyTransit">
+            <div class="nearby-transit-head">
+              <div>
+                <div class="nearby-transit-title">Транспорт до адреса</div>
+                <div class="nearby-transit-sub" id="nearbyTransitSub">Ищу транспорт…</div>
+              </div>
+              <button class="nearby-transit-close" id="closeNearbyTransit">×</button>
+            </div>
+            <div class="nearby-transit-routes" id="nearbyTransitRoutes"></div>
+          </section>
         </div>
-        <div class="nearby-transit-routes" id="nearbyTransitRoutes"></div>
       </section>
-    </section>
-    <section class="quick panel">
-      <button id="centerBtn"><span>◎</span><small>Где я</small></button>
-      <button id="transportBtn" class="transport-quick"><span class="transport-btn-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v10A2.5 2.5 0 0 1 17.5 18H17v2h-2v-2H9v2H7v-2h-.5A2.5 2.5 0 0 1 4 15.5v-10Zm2 0V10h12V5.5a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5Zm0 6.5v3.5c0 .28.22.5.5.5h11a.5.5 0 0 0 .5-.5V12H6Zm2 1h2v2H8v-2Zm6 0h2v2h-2v-2Z"/></svg><b id="transportCountBadge" class="transport-count hidden">0</b></span><small>Транспорт</small></button>
-      <button id="zoomInBtn"><span>＋</span><small>Ближе</small></button>
-      <button id="zoomOutBtn"><span>−</span><small>Дальше</small></button>
-      <button id="clearBtn"><span>×</span><small>Сброс</small></button>
-    </section>
-    <div class="attribution-pill">© OpenStreetMap · OpenFreeMap</div>
-  </main>
-  <div class="modal-backdrop hidden" id="searchModal">
-    <section class="search-sheet">
-      <div class="sheet-handle"></div>
-      <div class="search-head">
-        <button class="back-btn" id="closeSearch">←</button>
-        <div class="search-box"><span>⌕</span><input id="searchInput" autocomplete="off" placeholder="Адрес или место" /><button id="searchSubmit">Найти</button></div>
-      </div>
-      <div class="search-context hidden" id="searchContext"></div>
-      <div class="search-state-row">
-        <div class="search-state" id="searchState">Начните вводить адрес</div>
-        <button class="history-clear hidden" id="historyClear">Очистить</button>
-      </div>
-      <div class="results" id="results"></div>
-    </section>
-  </div>
-  <div class="transport-backdrop hidden" id="transportModal">
-    <section class="transport-sheet">
-      <div class="sheet-handle"></div>
-      <div class="transport-head">
-        <div>
-          <div class="transport-title">Транспорт на карте</div>
-          <div class="transport-sub" id="transportStatus">Получаю live-данные…</div>
+
+      <section class="sheet-panel hidden" id="searchModal">
+        <div class="search-sheet">
+          <div class="search-head">
+            <button class="back-btn" id="closeSearch">←</button>
+            <div class="search-box">
+              <span>⌕</span>
+              <input id="searchInput" autocomplete="off" placeholder="Адрес или место" />
+              <button id="searchSubmit">Найти</button>
+            </div>
+          </div>
+          <div class="search-context hidden" id="searchContext"></div>
+          <div class="search-state-row">
+            <div class="search-state" id="searchState">Начните вводить адрес</div>
+            <button class="history-clear hidden" id="historyClear">Очистить</button>
+          </div>
+          <div class="results" id="results"></div>
         </div>
-        <button class="transport-close" id="closeTransport" aria-label="Закрыть">×</button>
-      </div>
-      <div class="transport-groups" id="transportGroups"></div>
-      <div class="transport-note" id="transportNote">Включите нужные виды транспорта.</div>
-    </section>
-  </div>
-  <nav class="bottom-nav" id="bottomNav" aria-label="Основное меню">
-    <button class="bottom-nav-item active" id="bottomSearchBtn">
-      <span class="bottom-nav-icon">⌕</span>
-      <span>Поиск</span>
-    </button>
-    <button class="bottom-nav-item" id="bottomRouteBtn">
-      <span class="bottom-nav-icon">↗</span>
-      <span>Маршрут</span>
-    </button>
-    <button class="bottom-nav-item" id="bottomTransportBtn">
-      <span class="bottom-nav-icon">▣</span>
-      <span>Транспорт</span>
-    </button>
-    <button class="bottom-nav-item" id="bottomHistoryBtn">
-      <span class="bottom-nav-icon">◴</span>
-      <span>История</span>
-    </button>
-  </nav>
+      </section>
+
+      <section class="sheet-panel hidden" id="transportModal">
+        <div class="transport-sheet">
+          <div class="transport-head">
+            <div>
+              <div class="transport-title">Транспорт на карте</div>
+              <div class="transport-sub" id="transportStatus">Получаю live-данные…</div>
+            </div>
+            <button class="transport-close" id="closeTransport" aria-label="Закрыть">×</button>
+          </div>
+          <div class="transport-groups" id="transportGroups"></div>
+          <div class="transport-note" id="transportNote">Включите нужные виды транспорта.</div>
+        </div>
+      </section>
+    </div>
+
+    <nav class="bottom-nav" id="bottomNav" aria-label="Основное меню">
+      <button class="bottom-nav-item" id="bottomSearchBtn">
+        <span class="bottom-nav-icon">⌕</span><span>Поиск</span>
+      </button>
+      <button class="bottom-nav-item active" id="bottomRouteBtn">
+        <span class="bottom-nav-icon">↗</span><span>Маршрут</span>
+      </button>
+      <button class="bottom-nav-item" id="bottomTransportBtn">
+        <span class="bottom-nav-icon">▣</span><span>Транспорт</span>
+      </button>
+      <button class="bottom-nav-item" id="bottomHistoryBtn">
+        <span class="bottom-nav-icon">◴</span><span>История</span>
+      </button>
+    </nav>
+  </section>
+
   <div class="navigation-ui hidden" id="navigationUi">
     <section class="navigation-top">
       <div class="nav-maneuver" id="navManeuverIcon">↑</div>
@@ -114,31 +142,17 @@
       </div>
       <button class="nav-sound-btn" id="navSoundBtn" aria-label="Звук">🔊</button>
     </section>
-
     <div class="nav-rerouting hidden" id="navRerouting">Перестраиваю маршрут…</div>
-
     <button class="nav-recenter hidden" id="navRecenterBtn" aria-label="Вернуться к позиции">◎</button>
-
     <section class="navigation-bottom">
-      <div class="nav-stat">
-        <strong id="navEta">—</strong>
-        <span>прибытие</span>
-      </div>
-      <div class="nav-stat">
-        <strong id="navRemainingTime">—</strong>
-        <span>осталось</span>
-      </div>
-      <div class="nav-stat">
-        <strong id="navRemainingDistance">—</strong>
-        <span>расстояние</span>
-      </div>
-      <div class="nav-stat">
-        <strong id="navSpeed">0</strong>
-        <span>км/ч</span>
-      </div>
+      <div class="nav-stat"><strong id="navEta">—</strong><span>прибытие</span></div>
+      <div class="nav-stat"><strong id="navRemainingTime">—</strong><span>осталось</span></div>
+      <div class="nav-stat"><strong id="navRemainingDistance">—</strong><span>расстояние</span></div>
+      <div class="nav-stat"><strong id="navSpeed">0</strong><span>км/ч</span></div>
       <button class="nav-exit-btn" id="navExitBtn">Завершить</button>
     </section>
   </div>
+
   <div class="toast hidden" id="toast"></div>
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js'"></script>
   <script src="app.js"></script>
