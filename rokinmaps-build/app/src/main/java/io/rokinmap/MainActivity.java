@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.webkit.GeolocationPermissions;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -14,6 +15,15 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import androidx.webkit.WebViewAssetLoader;
+
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
     private static final int LOCATION_REQUEST = 42;
@@ -34,6 +44,7 @@ public class MainActivity extends Activity {
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#0B0F17"));
+        webView.addJavascriptInterface(new TransportBridge(), "RokinNative");
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -89,6 +100,64 @@ public class MainActivity extends Activity {
         }
         pendingGeoCallback = null;
         pendingGeoOrigin = null;
+    }
+
+    private class TransportBridge {
+        @JavascriptInterface
+        public void fetchAircraft(double lat, double lon, int radiusNm) {
+            final int radius = Math.max(10, Math.min(250, radiusNm));
+            new Thread(() -> {
+                HttpURLConnection connection = null;
+                try {
+                    String endpoint = String.format(
+                            java.util.Locale.US,
+                            "https://api.adsb.lol/v2/point/%.5f/%.5f/%d",
+                            lat, lon, radius
+                    );
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setRequestMethod("GET");
+                    connection.setConnectTimeout(10000);
+                    connection.setReadTimeout(12000);
+                    connection.setRequestProperty("Accept", "application/json");
+                    connection.setRequestProperty("User-Agent", "RokinMaps/0.2.5 (Android)");
+
+                    int code = connection.getResponseCode();
+                    InputStream stream = code >= 200 && code < 300
+                            ? connection.getInputStream()
+                            : connection.getErrorStream();
+                    String body = readAll(stream);
+
+                    if (code >= 200 && code < 300) {
+                        emitTransportCallback("onAircraft", body);
+                    } else {
+                        emitTransportCallback("onAircraftError", "HTTP " + code);
+                    }
+                } catch (Exception e) {
+                    emitTransportCallback("onAircraftError", e.getClass().getSimpleName());
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+            }).start();
+        }
+
+        private String readAll(InputStream stream) throws Exception {
+            if (stream == null) return "";
+            StringBuilder out = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) out.append(line);
+            }
+            return out.toString();
+        }
+
+        private void emitTransportCallback(String method, String payload) {
+            final String js = "window.RokinTransportNative&&window.RokinTransportNative."
+                    + method + "(" + JSONObject.quote(payload == null ? "" : payload) + ")";
+            runOnUiThread(() -> {
+                if (webView != null) webView.evaluateJavascript(js, null);
+            });
+        }
     }
 
     @Override
