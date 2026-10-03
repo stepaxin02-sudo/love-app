@@ -7,14 +7,26 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "app.rokin.maps"
+        applicationId = "app.rokin.maps.beta"
         minSdk = 26
         targetSdk = 35
         versionCode = 5
         versionName = "0.2.4"
     }
 
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("rokinmaps-dev.keystore")
+            storePassword = "android"
+            keyAlias = "rokinmaps_dev"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             isShrinkResources = false
