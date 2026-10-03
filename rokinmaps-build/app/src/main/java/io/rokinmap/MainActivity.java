@@ -238,6 +238,7 @@ public class MainActivity extends Activity {
                         urls = new String[]{"https://avtobus24.ru/omsk-trollejbus-" + slug + "/"};
                     } else if ("share_taxi".equals(routeType)) {
                         urls = new String[]{
+                                "https://kudikina.ru/omsk/mtaxi/" + slug + "/A",
                                 "https://avtobus24.ru/omsk-marshrutka-" + slug + "/",
                                 "https://avtobus24.ru/omsk-avtobus-" + slug + "/"
                         };
@@ -264,7 +265,30 @@ public class MainActivity extends Activity {
                         if (matcher.find()) {
                             result.put("from", matcher.group(1));
                             result.put("to", matcher.group(2));
-                            result.put("source", "avtobus24.ru");
+                            result.put("source", url.contains("kudikina.ru") ? "kudikina.ru" : "avtobus24.ru");
+                            result.put("status", "ok");
+                            emitTransportCallback("onRouteSchedule", result.toString(), String.valueOf(requestId));
+                            return;
+                        }
+
+                        Matcher timeMatcher = Pattern.compile("\\b([0-2]?\\d):(\\d{2})\\b").matcher(text);
+                        int minMinutes = Integer.MAX_VALUE;
+                        int maxMinutes = -1;
+                        int foundTimes = 0;
+                        while (timeMatcher.find()) {
+                            int hh = Integer.parseInt(timeMatcher.group(1));
+                            int mm = Integer.parseInt(timeMatcher.group(2));
+                            if (hh > 23 || mm > 59) continue;
+                            int minutes = hh * 60 + mm;
+                            if (minutes < 4 * 60) continue;
+                            foundTimes++;
+                            minMinutes = Math.min(minMinutes, minutes);
+                            maxMinutes = Math.max(maxMinutes, minutes);
+                        }
+                        if (foundTimes >= 4 && minMinutes < maxMinutes) {
+                            result.put("from", String.format(Locale.US, "%02d:%02d", minMinutes / 60, minMinutes % 60));
+                            result.put("to", String.format(Locale.US, "%02d:%02d", maxMinutes / 60, maxMinutes % 60));
+                            result.put("source", url.contains("kudikina.ru") ? "kudikina.ru" : "avtobus24.ru");
                             result.put("status", "ok");
                             emitTransportCallback("onRouteSchedule", result.toString(), String.valueOf(requestId));
                             return;
