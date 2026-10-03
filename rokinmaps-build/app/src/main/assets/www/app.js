@@ -371,6 +371,148 @@ function consumeTransitRoutePayload(raw,relationId=''){
 }
 function transitRouteError(message){toast(message||'Не удалось загрузить маршрут',3500)}
 
+
+function navSpeak(text){
+ if(!nav.sound||!text)return;
+ if(window.RokinNative&&typeof window.RokinNative.speak==='function'){window.RokinNative.speak(String(text));return}
+ try{if('speechSynthesis'in window){speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(String(text));u.lang='ru-RU';u.rate=1;speechSynthesis.speak(u)}}catch{}
+}
+function navStopSpeech(){
+ if(window.RokinNative&&typeof window.RokinNative.stopSpeaking==='function')window.RokinNative.stopSpeaking();
+ try{window.speechSynthesis?.cancel()}catch{}
+}
+function navSetNativeActive(active){
+ if(window.RokinNative&&typeof window.RokinNative.setNavigationActive==='function')window.RokinNative.setNavigationActive(!!active)
+}
+function routeSegmentMeters(a,b){
+ const lat=(+a[1]+ +b[1])/2*Math.PI/180,dx=(+b[0]- +a[0])*111320*Math.cos(lat),dy=(+b[1]- +a[1])*110540;return Math.hypot(dx,dy)
+}
+function buildRouteCumulative(coords){
+ const cum=[0];for(let i=1;i<coords.length;i++)cum[i]=cum[i-1]+routeSegmentMeters(coords[i-1],coords[i]);return cum
+}
+function nearestVertexIndex(coord,coords){
+ let best=0,dist=Infinity;for(let i=0;i<coords.length;i++){const d=distanceM({lat:+coord[1],lon:+coord[0]},{lat:+coords[i][1],lon:+coords[i][0]});if(d<dist){dist=d;best=i}}return best
+}
+function prepareNavRoute(route){
+ const coords=Array.isArray(route?.geometry?.coordinates)?route.geometry.coordinates:[];
+ nav.routeCoords=coords;nav.routeCum=buildRouteCumulative(coords);nav.totalDistance=nav.routeCum.at(-1)||Number(route?.distance)||0;nav.spoken.clear();nav.lastStepIndex=-1;
+ const steps=(route?.legs||[]).flatMap(l=>Array.isArray(l.steps)?l.steps:[]);
+ nav.maneuvers=steps.map((step,i)=>{
+  const loc=step?.maneuver?.location||step?.geometry?.coordinates?.[0]||coords[0]||[0,0],idx=coords.length?nearestVertexIndex(loc,coords):0;
+  return{step,index:i,coord:loc,routeIndex:idx,progress:nav.routeCum[idx]||0}
+ }).sort((a,b)=>a.progress-b.progress)
+}
+function closestRoutePoint(lat,lon){
+ const coords=nav.routeCoords,cum=nav.routeCum;if(!coords.length)return{distance:Infinity,progress:0,index:0,t:0,point:[lon,lat]};
+ let best={distance:Infinity,progress:0,index:0,t:0,point:coords[0]},cos=Math.cos(lat*Math.PI/180);
+ for(let i=0;i<coords.length-1;i++){
+  const a=coords[i],b=coords[i+1],ax=(+a[0]-lon)*111320*cos,ay=(+a[1]-lat)*110540,bx=(+b[0]-lon)*111320*cos,by=(+b[1]-lat)*110540,dx=bx-ax,dy=by-ay,den=dx*dx+dy*dy;
+  let t=den?-(ax*dx+ay*dy)/den:0;t=Math.max(0,Math.min(1,t));const px=ax+t*dx,py=ay+t*dy,d=Math.hypot(px,py);
+  if(d<best.distance){const seg=routeSegmentMeters(a,b);best={distance:d,progress:(cum[i]||0)+seg*t,index:i,t,point:[+a[0]+(+b[0]-+a[0])*t,+a[1]+(+b[1]-+a[1])*t]}}
+ }
+ return best
+}
+function bearingBetween(a,b){
+ const p1=+a.lat*Math.PI/180,p2=+b.lat*Math.PI/180,dl=(+b.lon-+a.lon)*Math.PI/180,y=Math.sin(dl)*Math.cos(p2),x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);return(Math.atan2(y,x)*180/Math.PI+360)%360
+}
+function maneuverIcon(step){
+ const t=String(step?.maneuver?.type||''),m=String(step?.maneuver?.modifier||'');
+ if(t==='arrive')return'●';if(t.includes('roundabout')||t==='rotary')return'↻';if(m.includes('left'))return m.includes('slight')?'↖':m.includes('sharp')?'↙':'←';if(m.includes('right'))return m.includes('slight')?'↗':m.includes('sharp')?'↘':'→';if(t==='uturn'||m==='uturn')return'↶';return'↑'
+}
+function maneuverText(step){
+ const t=String(step?.maneuver?.type||''),m=String(step?.maneuver?.modifier||''),name=String(step?.name||'').trim(),onto=name?(' на '+name):'';
+ if(t==='arrive')return'Вы прибыли';
+ if(t==='depart')return name?('Начинайте движение по '+name):'Начинайте движение';
+ if(t.includes('roundabout')||t==='rotary')return'Въезжайте на круговое движение'+onto;
+ if(t==='merge')return m.includes('left')?'Перестройтесь левее'+onto:'Перестройтесь правее'+onto;
+ if(t==='fork')return m.includes('left')?'Держитесь левее'+onto:'Держитесь правее'+onto;
+ if(t==='end of road')return m.includes('left')?'В конце дороги поверните налево'+onto:'В конце дороги поверните направо'+onto;
+ if(m.includes('left'))return m.includes('slight')?'Плавно поверните налево'+onto:m.includes('sharp')?'Резко поверните налево'+onto:'Поверните налево'+onto;
+ if(m.includes('right'))return m.includes('slight')?'Плавно поверните направо'+onto:m.includes('sharp')?'Резко поверните направо'+onto:'Поверните направо'+onto;
+ if(t==='new name'||t==='continue')return name?('Продолжайте по '+name):'Продолжайте движение';
+ return name?('Следуйте по '+name):'Продолжайте движение'
+}
+function nextNavManeuver(progress){
+ if(!nav.maneuvers.length)return null;
+ for(const m of nav.maneuvers)if(m.progress>progress+8)return m;
+ return nav.maneuvers.at(-1)
+}
+function navVoiceFor(m,dist){
+ const instruction=maneuverText(m.step),rounded=dist<100?Math.max(10,Math.round(dist/10)*10):Math.max(100,Math.round(dist/50)*50);
+ if(dist>80)return'Через '+rounded+' метров. '+instruction;
+ return instruction
+}
+function maybeSpeakNav(m,dist){
+ if(!m||!nav.sound)return;
+ let band=null;if(dist<=60)band='now';else if(dist<=180)band='180';else if(dist<=550)band='500';if(!band)return;
+ const key=m.index+':'+band;if(nav.spoken.has(key))return;
+ if(band==='now'){nav.spoken.add(m.index+':180');nav.spoken.add(m.index+':500')}else if(band==='180')nav.spoken.add(m.index+':500');
+ nav.spoken.add(key);navSpeak(navVoiceFor(m,dist))
+}
+function formatNavEta(seconds){
+ const d=new Date(Date.now()+Math.max(0,seconds)*1000);return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})
+}
+function setNavFollow(enabled){
+ nav.follow=!!enabled;$('navRecenterBtn')?.classList.toggle('hidden',nav.follow)
+}
+function updateNavMarker(lat,lon,bearing){
+ if(!map)return;
+ if(!nav.marker){const el=document.createElement('div');el.className='nav-position-marker';el.innerHTML='<div class="nav-position-core"><div class="nav-position-arrow">▲</div></div>';nav.marker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([lon,lat]).addTo(map)}
+ else nav.marker.setLngLat([lon,lat]);
+ const arrow=nav.marker.getElement().querySelector('.nav-position-arrow'),relative=(bearing-(map.getBearing()||0)+360)%360;if(arrow)arrow.style.transform='rotate('+relative+'deg)'
+}
+function navigationCamera(lat,lon,bearing,speed){
+ if(!map||!nav.follow)return;
+ const isWalk=state.mode==='foot',isBike=state.mode==='bike',zoom=isWalk?18.2:isBike?17.7:(speed>70?16.5:17.2),pitch=isWalk?40:55;
+ map.easeTo({center:[lon,lat],zoom,bearing:Number.isFinite(bearing)?bearing:map.getBearing(),pitch,duration:550,essential:true,offset:[0,innerHeight<700?70:95]})
+}
+function updateNavigationHud(progress,closest,pos){
+ const remaining=Math.max(0,nav.totalDistance-progress),ratio=nav.totalDistance?remaining/nav.totalDistance:0,remainingTime=Math.max(0,(Number(state.route?.duration)||0)*ratio),m=nextNavManeuver(progress),toManeuver=m?Math.max(0,m.progress-progress):remaining;
+ $('navRemainingDistance').textContent=formatDistance(remaining);$('navRemainingTime').textContent=formatDuration(remainingTime);$('navEta').textContent=formatNavEta(remainingTime);$('navSpeed').textContent=String(Math.max(0,Math.round((Number(pos.coords.speed)||0)*3.6)));
+ if(m){$('navManeuverIcon').textContent=maneuverIcon(m.step);$('navNextDistance').textContent=toManeuver<15?'Сейчас':formatDistance(toManeuver);$('navInstruction').textContent=maneuverText(m.step);$('navStreet').textContent=m.step?.name||'';maybeSpeakNav(m,toManeuver)}
+}
+function navigationArrived(){
+ if(nav.completed)return;nav.completed=true;if(nav.watchId!=null){navigator.geolocation.clearWatch(nav.watchId);nav.watchId=null}
+ navSetNativeActive(false);navStopSpeech();$('navigationUi')?.classList.add('arrived');$('navManeuverIcon').textContent='✓';$('navNextDistance').textContent='';$('navInstruction').textContent='Вы прибыли';$('navStreet').textContent=safeName(state.destination);$('navRemainingDistance').textContent='0 м';$('navRemainingTime').textContent='0 мин';$('navEta').textContent='—';$('navSpeed').textContent='0';navSpeak('Вы прибыли в пункт назначения')
+}
+async function rerouteNavigation(lat,lon){
+ if(nav.rerouting||!state.destination||Date.now()-nav.lastRerouteAt<12000)return;nav.rerouting=true;nav.lastRerouteAt=Date.now();$('navRerouting').classList.remove('hidden');
+ const a={lat,lon},b=state.destination,u=routeBase()+'/'+a.lon+','+a.lat+';'+b.lon+','+b.lat+'?overview=full&geometries=geojson&steps=true&alternatives=false';
+ try{const r=await fetch(u);if(!r.ok)throw 0;const d=await r.json();if(d.code!=='Ok'||!d.routes?.length)throw 0;state.route=d.routes[0];map.getSource('route')?.setData({type:'Feature',properties:{},geometry:state.route.geometry});prepareNavRoute(state.route);nav.lastProgress=0;nav.spoken.clear();navSpeak('Маршрут перестроен')}
+ catch{toast('Не удалось перестроить маршрут',2500)}
+ finally{nav.rerouting=false;$('navRerouting').classList.add('hidden')}
+}
+function onNavigationPosition(pos){
+ if(!nav.active||nav.completed||!state.route)return;
+ const lat=pos.coords.latitude,lon=pos.coords.longitude,accuracy=Number(pos.coords.accuracy)||20,speed=Math.max(0,(Number(pos.coords.speed)||0)*3.6),current={lat,lon};
+ let bearing=Number(pos.coords.heading);if(!Number.isFinite(bearing)&&nav.lastPos)bearing=bearingBetween(nav.lastPos,current);if(!Number.isFinite(bearing))bearing=nav.lastBearing||0;nav.lastBearing=bearing;nav.lastPos=current;
+ const closest=closestRoutePoint(lat,lon);nav.lastProgress=Math.max(nav.lastProgress-40,closest.progress);
+ updateNavMarker(lat,lon,bearing);updateNavigationHud(closest.progress,closest,pos);navigationCamera(lat,lon,bearing,speed);
+ const destDistance=distanceM(current,{lat:+state.destination.lat,lon:+state.destination.lon});if(destDistance<40||nav.totalDistance-closest.progress<30){navigationArrived();return}
+ const offThreshold=Math.max(55,accuracy*1.6);if(closest.distance>offThreshold)rerouteNavigation(lat,lon)
+}
+function navigationError(err){
+ if(!nav.active)return;const msg=err?.code===1?'Нет разрешения на геолокацию':err?.code===2?'GPS временно недоступен':'Не удалось получить GPS';toast(msg,3500)
+}
+function startNavigation(){
+ if(nav.active)return;if(!state.route||!state.destination){toast('Сначала постройте маршрут');return}if(!navigator.geolocation){toast('Геолокация недоступна');return}
+ prepareNavRoute(state.route);if(!nav.routeCoords.length){toast('У маршрута нет геометрии');return}
+ nav.active=true;nav.completed=false;nav.follow=true;nav.lastPos=null;nav.lastBearing=0;nav.lastProgress=0;nav.rerouting=false;nav.arrivedSpoken=false;nav.spoken.clear();
+ document.body.classList.add('nav-active');$('navigationUi').classList.remove('hidden','arrived');$('navRecenterBtn').classList.add('hidden');$('navRerouting').classList.add('hidden');navSetNativeActive(true);
+ if(nav.marker){nav.marker.remove();nav.marker=null}
+ navSpeak('Навигация началась');$('navInstruction').textContent='Определяю положение…';$('navNextDistance').textContent='GPS';
+ nav.watchId=navigator.geolocation.watchPosition(onNavigationPosition,navigationError,{enableHighAccuracy:true,maximumAge:1000,timeout:15000})
+}
+function stopNavigation(){
+ if(!nav.active&&!nav.completed)return;
+ if(nav.watchId!=null){navigator.geolocation.clearWatch(nav.watchId);nav.watchId=null}
+ nav.active=false;nav.completed=false;navSetNativeActive(false);navStopSpeech();document.body.classList.remove('nav-active');$('navigationUi').classList.add('hidden');$('navigationUi').classList.remove('arrived');$('navRerouting').classList.add('hidden');
+ if(nav.marker){nav.marker.remove();nav.marker=null}map?.easeTo({pitch:0,bearing:0,zoom:15.5,duration:650})
+}
+function toggleNavSound(){
+ nav.sound=!nav.sound;$('navSoundBtn').textContent=nav.sound?'🔊':'🔇';if(!nav.sound)navStopSpeech();else navSpeak('Голосовые подсказки включены')
+}
+
 function toast(msg,ms=3000){const e=$('toast');e.textContent=msg;e.classList.remove('hidden');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.add('hidden'),ms)}
 function setHint(t){$('hintText').textContent=t}function safeName(p){return p?.display_name||p?.name||'Точка на карте'}
 function initMap(){if(!window.maplibregl){toast('Не удалось загрузить движок карты');return}map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/liberty',center:[73.3686,54.9893],zoom:11,attributionControl:false,maxPitch:70});map.on('load',()=>{map.addSource('route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});map.addLayer({id:'route-shadow',type:'line',source:'route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#0b1020','line-width':10,'line-opacity':.42}});map.addLayer({id:'route-line',type:'line',source:'route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#6d7dff','line-width':6}});map.addSource('transit-route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});map.addLayer({id:'transit-route-shadow',type:'line',source:'transit-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#101522','line-width':9,'line-opacity':.48}});map.addLayer({id:'transit-route-line',type:'line',source:'transit-route',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffb84d','line-width':5,'line-opacity':.95}});startLiveTransport()});map.on('click',e=>{if(!$('searchModal').classList.contains('hidden'))return;const p={lat:e.lngLat.lat,lon:e.lngLat.lng,display_name:e.lngLat.lat.toFixed(5)+', '+e.lngLat.lng.toFixed(5)};if(!state.origin)setPlace('origin',p);else if(!state.destination)setPlace('destination',p)})}
